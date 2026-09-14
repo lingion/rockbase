@@ -1,0 +1,5 @@
+config.toml
+workbench/
+*.db
+__pycache__/
+*.pyc

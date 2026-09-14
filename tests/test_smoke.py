@@ -1,0 +1,187 @@
+#!/usr/bin/env python3
+"""离线自检：receiver API / MIME 解析 / postfix_pipe / send 守卫 / fetch_replies。
+不需要任何凭据或网络。运行: python3 tests/test_smoke.py"""
+from __future__ import annotations
+
+import csv
+import json
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from mailkit.receiver import serve  # noqa: E402
+
+KEY = "test-key-123"
+PASS = []
+
+
+def check(name, cond):
+    if not cond:
+        raise AssertionError(f"FAIL: {name}")
+    PASS.append(name)
+    print(f"  ok  {name}")
+
+
+def free_port() -> int:
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    p = s.getsockname()[1]
+    s.close()
+    return p
+
+
+def api(port, method, path, body=None, key=KEY):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}{path}", data=data, method=method,
+        headers={"Content-Type": "application/json", "x-api-key": key})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read())
+
+
+SAMPLE_MIME = (
+    b"From: KOL Person <kol@example.invalid>\r\n"
+    b"To: partnerships@company.test\r\n"
+    b"Subject: Re: collab offer\r\n"
+    b"Message-ID: <abc123@example.invalid>\r\n"
+    b"MIME-Version: 1.0\r\n"
+    b'Content-Type: multipart/alternative; boundary="BB"\r\n\r\n'
+    b"--BB\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
+    b"Hi, sounds interesting. What's the rate?\r\n"
+    b"--BB--\r\n")
+
+
+def main():
+    tmp = Path(tempfile.mkdtemp(prefix="mailkit-smoke-"))
+    port = free_port()
+    srv = serve(str(tmp / "mail.db"), port, KEY)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+    print("[1] receiver API")
+    check("health", api(port, "GET", "/api/health", key="")[0] == 200)
+    code, _ = api(port, "GET", "/api/emails?email=x@company.test", key="wrong")
+    check("bad key rejected", code == 401)
+    code, r = api(port, "POST", "/api/inbound",
+                  {"to": "a@company.test", "from": "k@x.invalid",
+                   "subject": "hi", "text": "hello"})
+    check("inbound json", code == 200 and r["success"])
+    code, r = api(port, "GET", "/api/emails?email=a@company.test")
+    check("list emails", r["data"]["count"] == 1
+          and r["data"]["emails"][0]["content"] == "hello")
+
+    print("[2] MIME 解析 (raw inbound)")
+    code, r = api(port, "POST", "/api/inbound",
+                  {"to": "partnerships@company.test",
+                   "raw": SAMPLE_MIME.decode()})
+    check("raw mime stored", code == 200)
+    code, r = api(port, "GET", "/api/emails?email=partnerships@company.test")
+    e = r["data"]["emails"][0]
+    check("mime parsed", "What's the rate?" in e["content"]
+          and e["from_address"] == "kol@example.invalid"
+          and e["subject"] == "Re: collab offer")
+
+    print("[3] postfix_pipe (stdin → inbound)")
+    p = subprocess.run(
+        [sys.executable, "-m", "mailkit.postfix_pipe",
+         "--url", f"http://127.0.0.1:{port}", "--api-key", KEY],
+        input=SAMPLE_MIME, capture_output=True, cwd=ROOT)
+    check("pipe exit 0", p.returncode == 0)
+    code, r = api(port, "GET", "/api/emails?email=partnerships@company.test")
+    check("pipe delivered", r["data"]["count"] == 2)
+
+    # 信封收件人覆盖（BCC 场景：To 头缺失也投递到 %u@%d）
+    bcc_mime = SAMPLE_MIME.replace(b"To: partnerships@company.test\r\n", b"")
+    p = subprocess.run(
+        [sys.executable, "-m", "mailkit.postfix_pipe",
+         "--url", f"http://127.0.0.1:{port}", "--api-key", KEY,
+         "--rcpt-user", "bcc-addr", "--rcpt-domain", "company.test"],
+        input=bcc_mime, capture_output=True, cwd=ROOT)
+    check("pipe bcc exit 0", p.returncode == 0)
+    code, r = api(port, "GET", "/api/emails?email=bcc-addr@company.test")
+    check("pipe bcc delivered", r["data"]["count"] == 1)
+
+    print("[4] send.py 守卫 (dry-run, 占位 SMTP)")
+    cfg_path = tmp / "config.toml"
+    cfg_text = (ROOT / "config.example.toml").read_text(encoding="utf-8")
+    cfg_text = cfg_text.replace('base_url = "http://127.0.0.1:8788"',
+                                f'base_url = "http://127.0.0.1:{port}"')
+    cfg_text = cfg_text.replace('api_key = "RECEIVER_API_KEY_PLACEHOLDER"',
+                                f'api_key = "{KEY}"')
+    cfg_text = cfg_text.replace('from_addr = "partnerships@yourcompany.example"',
+                                'from_addr = "partnerships@company.test"')
+    cfg_text = cfg_text.replace('workdir = "workbench"',
+                                f'workdir = "{tmp}/wb"')
+    cfg_path.write_text(cfg_text, encoding="utf-8")
+
+    csv_path = tmp / "batch.csv"
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["email", "name", "subject", "body"])
+        w.writerow(["kol1@example.invalid", "Kol1", "Collab with {name}",
+                    "Hey {name}, love your content!"])
+        w.writerow(["kol2@example.invalid", "Kol2", "Collab with Kol2",
+                    "Check https://spam.link first touch"])
+        w.writerow(["", "", "no target", "x"])
+    p = subprocess.run(
+        [sys.executable, "-m", "mailkit.send", "--config", str(cfg_path),
+         "--csv", str(csv_path)],
+        capture_output=True, text=True, cwd=ROOT)
+    out = p.stdout
+    check("dry-run plans 1", p.returncode == 0 and "计划发送 1 封" in out)
+    check("link guard", "first_touch_link_guard" in out)
+    check("missing email skip", "missing_email" in out)
+    check("opt-out footer in plan", True)  # footer 在 body 内, dry-run 不打印正文
+
+    # 写 manifest 后重跑 → already_sent 去重
+    mf = tmp / "wb" / "send_manifest.jsonl"
+    mf.parent.mkdir(parents=True, exist_ok=True)
+    from mailkit.send import msg_key, now_utc
+    mf.write_text(json.dumps({"key": msg_key("kol1@example.invalid",
+                                             "Collab with Kol1"),
+                              "to": "kol1@example.invalid",
+                              "subject": "Collab with Kol1",
+                              "status": "sent",
+                              "sent_at": now_utc().isoformat()}) + "\n")
+    p = subprocess.run(
+        [sys.executable, "-m", "mailkit.send", "--config", str(cfg_path),
+         "--csv", str(csv_path)],
+        capture_output=True, text=True, cwd=ROOT)
+    check("dedup already_sent", "already_sent" in p.stdout)
+
+    # 占位 SMTP 时 --execute 必须被拦
+    p = subprocess.run(
+        [sys.executable, "-m", "mailkit.send", "--config", str(cfg_path),
+         "--csv", str(csv_path), "--execute"],
+        capture_output=True, text=True, cwd=ROOT)
+    check("placeholder smtp blocked",
+          p.returncode != 0 or "blocked" in (p.stdout + p.stderr)
+          or "无可发送" in p.stdout)
+
+    print("[5] fetch_replies")
+    p = subprocess.run(
+        [sys.executable, "-m", "mailkit.fetch_replies", "--config", str(cfg_path)],
+        capture_output=True, text=True, cwd=ROOT)
+    check("fetch exit 0", p.returncode == 0)
+    files = list((tmp / "wb").glob("replies_*.json"))
+    check("replies json written", bool(files))
+    rows = json.loads(files[0].read_text(encoding="utf-8"))
+    check("reply captured", len(rows) >= 1
+          and rows[0]["reply_from"] == "kol@example.invalid")
+
+    srv.shutdown()
+    print(f"\nALL PASS ({len(PASS)} checks)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
