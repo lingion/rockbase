@@ -1,0 +1,59 @@
+{
+  "task_name": "openclaw_recent_hot_kol_en_batch4",
+  "platform": "x",
+  "topic_query": "OpenClaw",
+  "layer1": {
+    "provider": "bird_cli"
+  },
+  "target_entity": "kol",
+  "task_brief_nl": "我需要找最近话题是 OpenClaw，语言是英文，粉丝量在1000以上，热帖阅读在5000以上，国家无所谓，发帖时间在7天以内。",
+  "query_variant": "default",
+  "query_registry_enabled": true,
+  "discovery_master_enabled": true,
+  "language_include": [
+    "en"
+  ],
+  "exclude_keywords": [
+    "crypto",
+    "trader",
+    "airdrop"
+  ],
+  "search_queries": [
+    {
+      "name": "topic_install",
+      "query": "\"OpenClaw\" (install OR setup OR guide OR github OR repo)",
+      "limit": 50
+    },
+    {
+      "name": "topic_compare",
+      "query": "\"OpenClaw\" (\"vs\" OR compare OR comparison OR alternative OR competitor)",
+      "limit": 50
+    },
+    {
+      "name": "topic_usage",
+      "query": "\"OpenClaw\" (browser OR desktop OR automation OR agent OR workflow)",
+      "limit": 50
+    },
+    {
+      "name": "topic_feedback",
+      "query": "\"OpenClaw\" (feedback OR experience OR trying OR tested OR thoughts)",
+      "limit": 50
+    }
+  ],
+  "since": "2026-03-25",
+  "until": "2026-04-01",
+  "result_limit": 90,
+  "shortlist_target": 100,
+  "layer2": {
+    "provider": "scrapecreators_twitter_profile",
+    "min_max_views": 5000
+  },
+  "layer3": {
+    "min_followers": 1000,
+    "min_followers_for_keep": 1000
+  },
+  "output": {
+    "target_table": "s2",
+    "deliver_netnew_only": true
+  }
+}

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Sheet Overlay Sync"
+  short_description: "先映射后确认的表格覆盖同步"
+  default_prompt: "Use $ag-sheet-overlay-sync to map a source sheet onto a target sheet, show the mapping plan first, and only execute after confirmation."
+
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,41 @@
+{
+  "task_name": "openclaw_recent_hot_kol_en",
+  "platform": "x",
+  "topic_query": "OpenClaw",
+  "target_entity": "kol",
+  "task_brief_nl": "我需要寻找最近发布了和 OpenClaw 有关的热帖的 KOL，英语区，粉丝量在1000人以上，热帖的定义是5000以上",
+  "query_variant": "default",
+  "query_registry_enabled": true,
+  "discovery_master_enabled": true,
+  "language_include": [
+    "en"
+  ],
+  "exclude_keywords": [
+    "crypto",
+    "trader",
+    "airdrop"
+  ],
+  "role_keywords": [
+    "builder",
+    "founder",
+    "engineer",
+    "researcher",
+    "creator"
+  ],
+  "since": "2026-03-25",
+  "until": "2026-04-01",
+  "result_limit": 90,
+  "shortlist_target": 100,
+  "layer2": {
+    "provider": "scrapecreators_twitter_profile",
+    "min_max_views": 5000
+  },
+  "layer3": {
+    "min_followers": 1000,
+    "min_followers_for_keep": 1000
+  },
+  "output": {
+    "target_table": "s2",
+    "deliver_netnew_only": true
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "task_name": "replace_me",
+  "platform": "x",
+  "topic_query": "replace_me",
+  "target_entity": "kol",
+  "task_brief_nl": "replace_me",
+  "query_variant": "default",
+  "query_registry_enabled": true,
+  "discovery_master_enabled": true,
+  "language_include": [
+    "en"
+  ],
+  "exclude_keywords": [
+    "crypto",
+    "trader",
+    "airdrop"
+  ],
+  "role_keywords": [
+    "builder",
+    "founder",
+    "engineer",
+    "researcher",
+    "creator"
+  ],
+  "content_keywords": [
+    "tutorial",
+    "demo",
+    "review",
+    "usecase",
+    "walkthrough"
+  ],
+  "product_keywords": [
+    "startup",
+    "SaaS",
+    "product",
+    "team",
+    "launch"
+  ],
+  "workflow_keywords": [
+    "workflow",
+    "productivity",
+    "coding",
+    "devtools",
+    "build"
+  ],
+  "agentic_keywords": [
+    "agentic",
+    "copilot",
+    "copilots",
+    "assistant",
+    "assistants",
+    "operators"
+  ],
+  "topic_keywords": [
+    "AI",
+    "AI agents",
+    "automation",
+    "developer tools"
+  ],
+  "since": "YYYY-MM-DD",
+  "until": "YYYY-MM-DD",
+  "result_limit": 90,
+  "shortlist_target": 100,
+  "layer2": {
+    "provider": "scrapecreators_twitter_profile",
+    "min_max_views": 5000
+  },
+  "layer3": {
+    "min_followers": 1000,
+    "min_followers_for_keep": 1000
+  },
+  "output": {
+    "target_table": "s2",
+    "deliver_netnew_only": true
+  }
+}

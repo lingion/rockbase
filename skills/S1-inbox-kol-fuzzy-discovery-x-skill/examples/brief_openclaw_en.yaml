@@ -1,0 +1,15 @@
+platform: x
+topic_query: "OpenClaw AI agents automation developer tools"
+language_include:
+  - en
+country_include: []
+bio_keywords:
+  - founder
+  - builder
+  - engineer
+exclude_keywords:
+  - crypto
+  - trader
+  - airdrop
+result_limit: 100
+

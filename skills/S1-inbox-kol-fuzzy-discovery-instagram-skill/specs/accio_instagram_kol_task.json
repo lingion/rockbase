@@ -1,0 +1,18 @@
+{
+  "task_name": "instagram_kol_discovery_accio",
+  "platform": "instagram",
+  "topic_query": "accio",
+  "country_include": ["US"],
+  "language_include": ["en"],
+  "l1_mode": "dual_channel",
+  "limit_per_query": 20,
+  "min_content_views_for_l2": 2000,
+  "min_followers_for_l3": 2000,
+  "search_queries": [
+    {
+      "name": "brand_core",
+      "query": "accio",
+      "limit": 20
+    }
+  ]
+}

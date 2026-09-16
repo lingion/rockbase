@@ -1,0 +1,17 @@
+beautifulsoup4<5
+deep-translator<2
+google-api-python-client<3
+google-auth<3
+google-auth-httplib2<1
+httplib2<1
+instaloader<5
+langdetect<2
+openai<3
+opencv-python<5
+openpyxl<4
+pandas<3
+Pillow<12
+playwright<2
+python-dotenv<2
+requests<3
+twscrape<1

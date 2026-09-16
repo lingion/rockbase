@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RQ / RI Template Cheatsheet | Rockbase Agency</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #fdf6ec; /* Beige background from screenshot */
+            --text-title: #2d3436;
+            --text-subtitle: #636e72;
+            --card-bg: #ffffff;
+            --border-rq: #e67e22; /* Orange accent */
+            --border-ri: #16a085; /* Teal accent */
+            --tag-rq: #fdebd0;
+            --tag-ri: #d1f2eb;
+            --tag-rq-text: #d35400;
+            --tag-ri-text: #117a65;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            padding: 50px 40px;
+            color: var(--text-title);
+        }
+
+        header {
+            margin-bottom: 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .header-left h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            letter-spacing: -1px;
+            margin-bottom: 8px;
+        }
+
+        .header-left p {
+            color: var(--text-subtitle);
+            font-size: 1.1rem;
+            font-weight: 400;
+        }
+
+        .header-right {
+            display: flex;
+            gap: 12px;
+        }
+
+        .status-tag {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .status-tag.rq { background-color: var(--tag-rq); color: var(--tag-rq-text); border: 1px solid rgba(211, 84, 0, 0.2); }
+        .status-tag.ri { background-color: var(--tag-ri); color: var(--tag-ri-text); border: 1px solid rgba(17, 122, 101, 0.2); }
+        .status-tag.fix { background-color: #f2f2f2; color: #666; border: 1px solid #ddd; }
+
+        .dashboard {
+            display: flex;
+            gap: 40px;
+        }
+
+        .column {
+            flex: 1;
+        }
+
+        .section-header {
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-header::before {
+            content: '';
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .rq-col .section-header::before { background-color: var(--border-rq); }
+        .ri-col .section-header::before { background-color: var(--border-ri); }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            border: 1px solid #e0e0e0;
+            border-left: 8px solid transparent;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+            transition: transform 0.2s;
+        }
+
+        .card:hover {
+            transform: scale(1.02);
+            box-shadow: 0 8px 15px rgba(0,0,0,0.05);
+        }
+
+        .rq-col .card { border-left-color: var(--border-rq); }
+        .ri-col .card { border-left-color: var(--border-ri); }
+
+        .card-code {
+            font-size: 0.9rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .rq-col .card-code { color: var(--border-rq); }
+        .ri-col .card-code { color: var(--border-ri); }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: #1a1a1a;
+        }
+
+        .card-purpose {
+            font-size: 0.95rem;
+            color: #555;
+            font-weight: 500;
+            margin-bottom: 12px;
+        }
+
+        .card-desc {
+            font-size: 0.9rem;
+            color: #777;
+            line-height: 1.5;
+            background: #f9f9f9;
+            padding: 10px;
+            border-radius: 6px;
+        }
+
+        @media (max-width: 1024px) {
+            .dashboard { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-left">
+        <h1>RQ / RI Template Cheatsheet</h1>
+        <p>Rockbase ReplyOps Mail2 / Mail3 快速判断卡</p>
+    </div>
+    <div class="header-right">
+        <div class="status-tag rq">RQ = 对方已报价</div>
+        <div class="status-tag ri">RI = 有兴趣但还缺信息</div>
+        <div class="status-tag fix">固定问候语: Hi,</div>
+    </div>
+</header>
+
+<div class="dashboard">
+    <!-- RQ Column -->
+    <div class="column rq-col">
+        <h2 class="section-header">RQ Templates</h2>
+        
+        <div class="card">
+            <div class="card-code">RQ1</div>
+            <div class="card-title">quoted_send_details</div>
+            <div class="card-purpose">已拿到报价，但还想继续压价 / 试探 agency rate</div>
+            <div class="card-desc">对方已经给了 usable rate，但我们还想再争取更低的 first-test price。</div>
+        </div>
+
+        <div class="card">
+            <div class="card-code">RQ2</div>
+            <div class="card-title">quoted_accept_standard</div>
+            <div class="card-purpose">接受当前报价，先保温等待匹配 brief</div>
+            <div class="card-desc">对方已经给了可用价格，我们暂时不需要继续压价，也不急着推进成交。</div>
+        </div>
+
+        <div class="card">
+            <div class="card-code">RQ3</div>
+            <div class="card-title">quoted_accept_discounted</div>
+            <div class="card-purpose">接受对方给出的折扣价 / 首次合作优惠价</div>
+            <div class="card-desc">正文里出现 adjusted rate、discount、first collaboration offer 等折扣信号。</div>
+        </div>
+    </div>
+
+    <!-- RI Column -->
+    <div class="column ri-col">
+        <h2 class="section-header">RI Templates</h2>
+
+        <div class="card">
+            <div class="card-code">RI1</div>
+            <div class="card-title">interested_request_rate</div>
+            <div class="card-purpose">对方有兴趣，但还没给 usable price</div>
+            <div class="card-desc">回信表达 interested / open，但没有 dedicated、integration 等可执行报价。</div>
+        </div>
+
+        <div class="card">
+            <div class="card-code">RI2</div>
+            <div class="card-title">interested_send_details_no_price</div>
+            <div class="card-purpose">给了 media kit / audience info / 附件，但价格仍不清楚</div>
+            <div class="card-desc">让我们看 PDF、media kit、链接或只补 audience info，没有清晰价格板块。</div>
+        </div>
+
+        <div class="card">
+            <div class="card-code">RI3</div>
+            <div class="card-title">ask_budget_first</div>
+            <div class="card-purpose">先问我们预算 / offer</div>
+            <div class="card-desc">正文出现 what is your budget、share your budget 等这类反问。</div>
+        </div>
+
+        <div class="card">
+            <div class="card-code">RI4</div>
+            <div class="card-title">verification_or_brief_gate</div>
+            <div class="card-purpose">要求先验证身份、先看 brief、先看 campaign details</div>
+            <div class="card-desc">对方要先看 brief 或验证身份，才肯提报价。</div>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

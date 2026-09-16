@@ -1,0 +1,3 @@
+deep-translator>=1.11,<2
+instaloader>=4.11,<5
+twscrape>=0.15,<1

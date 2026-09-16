@@ -1,0 +1,7 @@
+{
+  "platform": "x",
+  "topic_query": "OpenClaw AI agents automation developer tools",
+  "language_include": ["en"],
+  "exclude_keywords": ["crypto", "trader", "airdrop"],
+  "result_limit": 100
+}

@@ -1,0 +1,102 @@
+{
+  "schema_name": "S3 ReplyOps Replied Master V3",
+  "schema_version": "2026-03-20",
+  "table_file": "Agency/list-master/【S3 ReplyOps】Corestar-Replied-KOL_V3.csv",
+  "source_match_tables": [
+    "Agency/list-master/【S2 Cold】Corestar-1000-KOL.csv",
+    "Agency/list-master/【S2 Cold】Rockbase-580-KOL.csv"
+  ],
+  "routing_rule": {
+    "match_only_against": [
+      "Agency/list-master/【S2 Cold】Corestar-1000-KOL.csv",
+      "Agency/list-master/【S2 Cold】Rockbase-580-KOL.csv"
+    ],
+    "writeback_only_to": "Agency/list-master/【S3 ReplyOps】Corestar-Replied-KOL_V3.csv"
+  },
+  "stability_rule": {
+    "canonical_protocol": "field_name",
+    "do_not_use_as_protocol": [
+      "excel_column_letter",
+      "column_position",
+      "spreadsheet_display_label"
+    ],
+    "normalization_hints": [
+      "trim leading and trailing whitespace",
+      "preserve original case for canonical match",
+      "when matching UI labels, first try exact canonical name",
+      "then try aliases",
+      "never write by column index"
+    ]
+  },
+  "fields": [
+    {"name":"Pipeline_Stage","group":"pipeline_identity","owner":"shared-guarded","aliases":["pipeline stage","Pipeline Stage"]},
+    {"name":"Source_Tag","group":"pipeline_identity","owner":"manual-first","aliases":["source tag","Source Tag"]},
+    {"name":"账号ID","group":"pipeline_identity","owner":"manual-first","aliases":["account_id","账号 id","Account ID"]},
+    {"name":"频道/作者名称","group":"pipeline_identity","owner":"manual-first","aliases":["频道名称","作者名称","channel_name","creator_name","Channel / Creator Name"]},
+    {"name":"平台","group":"pipeline_identity","owner":"manual-first","aliases":["platform","Platform"]},
+    {"name":"账号链接","group":"pipeline_identity","owner":"manual-first","aliases":["profile_url","账号链接 ","Account Link"]},
+    {"name":"语言","group":"pipeline_identity","owner":"manual-first","aliases":["language","Language"]},
+
+    {"name":"Reply_Contact_Email","group":"current_reply_intelligence","owner":"recovery","aliases":["reply contact email","Reply Contact Email","contact_email"]},
+    {"name":"Reply_Thread_ID","group":"current_reply_intelligence","owner":"recovery","aliases":["reply thread id","Reply Thread ID","thread_id"]},
+    {"name":"Reply_Last_Message_ID","group":"current_reply_intelligence","owner":"recovery","aliases":["reply last message id","Reply Last Message ID","last_message_id"]},
+    {"name":"Reply_Last_Subject","group":"current_reply_intelligence","owner":"recovery","aliases":["reply last subject","Reply Last Subject","latest_subject"]},
+    {"name":"Reply_Last_At","group":"current_reply_intelligence","owner":"recovery","aliases":["reply last at","Reply Last At","latest_reply_at"]},
+    {"name":"Reply_Main_Dedicated_Rate","group":"current_reply_intelligence","owner":"recovery","aliases":["reply main dedicated rate","Reply Main Dedicated Rate","main_dedicated_rate"]},
+    {"name":"Reply_Comprehensive_Pricing","group":"current_reply_intelligence","owner":"recovery","aliases":["reply comprehensive pricing","Reply Comprehensive Pricing","structured_pricing"]},
+    {"name":"Reply_Pricing_Excerpt","group":"current_reply_intelligence","owner":"recovery","aliases":["reply pricing excerpt","Reply Pricing Excerpt","pricing_excerpt"]},
+
+    {"name":"Mail1_Pricing_Excerpt","group":"wave_pricing_history","owner":"recovery","aliases":["mail1 pricing excerpt","Mail1 Pricing Excerpt","m1_pricing_excerpt"]},
+    {"name":"Mail2_Pricing_Excerpt","group":"wave_pricing_history","owner":"recovery","aliases":["mail2 pricing excerpt","Mail2 Pricing Excerpt","m2_pricing_excerpt"]},
+    {"name":"Mail3_Pricing_Excerpt","group":"wave_pricing_history","owner":"recovery","aliases":["mail3 pricing excerpt","Mail3 Pricing Excerpt","m3_pricing_excerpt"]},
+    {"name":"Pricing_Effective_Wave","group":"wave_pricing_history","owner":"recovery","aliases":["pricing effective wave","Pricing Effective Wave","effective_wave"]},
+    {"name":"Pricing_Change_Type","group":"wave_pricing_history","owner":"recovery","aliases":["pricing change type","Pricing Change Type","price_change_type"]},
+
+    {"name":"Mail1_Subject","group":"mail1_block","owner":"draft-ops","aliases":["mail1 subject","Mail1 Subject","m1_subject"]},
+    {"name":"Mail1_Template","group":"mail1_block","owner":"draft-ops","aliases":["mail1 template","Mail1 Template","m1_template"]},
+    {"name":"Mail1_Body_Final","group":"mail1_block","owner":"draft-ops","aliases":["mail1 body final","Mail1 Body Final","m1_body_final"]},
+    {"name":"Mail1_Status","group":"mail1_block","owner":"draft-ops","aliases":["mail1 status","Mail1 Status","m1_status"]},
+    {"name":"Mail1_Draft_ID","group":"mail1_block","owner":"draft-ops","aliases":["mail1 draft id","Mail1 Draft ID","m1_draft_id"]},
+    {"name":"Mail1_Sent_At","group":"mail1_block","owner":"draft-ops","aliases":["mail1 sent at","Mail1 Sent At","m1_sent_at"]},
+    {"name":"Mail1_Reply_At","group":"mail1_block","owner":"recovery","aliases":["mail1 reply at","Mail1 Reply At","m1_reply_at"]},
+    {"name":"Mail1_Reply_Summary","group":"mail1_block","owner":"recovery","aliases":["mail1 reply summary","Mail1 Reply Summary","m1_reply_summary"]},
+    {"name":"Mail1_Reply","group":"mail1_block","owner":"recovery","aliases":["mail1 reply","Mail1 Reply","m1_reply"]},
+    {"name":"Mail1_Attachment_Pricing_Excerpt","group":"mail1_block","owner":"recovery","aliases":["mail1 attachment pricing excerpt","Mail1 Attachment Pricing Excerpt","m1_attachment_pricing_excerpt"]},
+
+    {"name":"Mail2_Reply_Template","group":"mail2_block","owner":"draft-ops","aliases":["mail2 reply template","Mail2 Reply Template","m2_template"]},
+    {"name":"Mail2_Body_Final","group":"mail2_block","owner":"draft-ops","aliases":["mail2 body final","Mail2 Body Final","m2_body_final"]},
+    {"name":"Mail2_Status","group":"mail2_block","owner":"draft-ops","aliases":["mail2 status","Mail2 Status","m2_status"]},
+    {"name":"Mail2_Draft_ID","group":"mail2_block","owner":"draft-ops","aliases":["mail2 draft id","Mail2 Draft ID","m2_draft_id"]},
+    {"name":"Mail2_Reply_At","group":"mail2_block","owner":"recovery","aliases":["mail2 reply at","Mail2 Reply At","m2_reply_at"]},
+    {"name":"Mail2_Reply_Summary","group":"mail2_block","owner":"recovery","aliases":["mail2 reply summary","Mail2 Reply Summary","m2_reply_summary"]},
+    {"name":"Mail2_Reply","group":"mail2_block","owner":"recovery","aliases":["mail2 reply","Mail2 Reply","m2_reply"]},
+    {"name":"Mail2_Attachment_Pricing_Excerpt","group":"mail2_block","owner":"recovery","aliases":["mail2 attachment pricing excerpt","Mail2 Attachment Pricing Excerpt","m2_attachment_pricing_excerpt"]},
+
+    {"name":"Mail3_Reply_Template","group":"mail3_block","owner":"draft-ops","aliases":["mail3 reply template","Mail3 Reply Template","m3_template"]},
+    {"name":"Mail3_Body_Final","group":"mail3_block","owner":"draft-ops","aliases":["mail3 body final","Mail3 Body Final","m3_body_final"]},
+    {"name":"Mail3_Status","group":"mail3_block","owner":"draft-ops","aliases":["mail3 status","Mail3 Status","m3_status"]},
+    {"name":"Mail3_Draft_ID","group":"mail3_block","owner":"draft-ops","aliases":["mail3 draft id","Mail3 Draft ID","m3_draft_id"]},
+    {"name":"Mail3_Reply_At","group":"mail3_block","owner":"recovery","aliases":["mail3 reply at","Mail3 Reply At","m3_reply_at"]},
+    {"name":"Mail3_Reply_Summary","group":"mail3_block","owner":"recovery","aliases":["mail3 reply summary","Mail3 Reply Summary","m3_reply_summary"]},
+    {"name":"Mail3_Reply","group":"mail3_block","owner":"recovery","aliases":["mail3 reply","Mail3 Reply","m3_reply"]},
+    {"name":"Mail3_Attachment_Pricing_Excerpt","group":"mail3_block","owner":"recovery","aliases":["mail3 attachment pricing excerpt","Mail3 Attachment Pricing Excerpt","m3_attachment_pricing_excerpt"]},
+
+    {"name":"Reply_Status","group":"recovery_status","owner":"recovery","aliases":["reply status","Reply Status"]},
+    {"name":"Reply_Needs_Manual_Review","group":"recovery_status","owner":"recovery","aliases":["reply needs manual review","Reply Needs Manual Review","needs_manual_review"]},
+    {"name":"Reply_Body_File","group":"recovery_status","owner":"recovery","aliases":["reply body file","Reply Body File","body_file"]},
+    {"name":"Reply_Stage","group":"recovery_status","owner":"recovery","aliases":["reply stage","Reply Stage"]},
+
+    {"name":"Owner","group":"manual_ops","owner":"manual-first","aliases":["owner","assignee","Owner"]},
+    {"name":"Priority","group":"manual_ops","owner":"manual-first","aliases":["priority","Priority"]},
+    {"name":"Final_Outcome","group":"manual_ops","owner":"manual-first","aliases":["final outcome","Final Outcome","outcome"]},
+    {"name":"Ops_Notes","group":"manual_ops","owner":"manual-first","aliases":["ops notes","Ops Notes","notes"]},
+
+    {"name":"Outbound_Message_IDs","group":"recovery_tracking","owner":"recovery","aliases":["outbound message ids","Outbound Message IDs","outbound_ids"]},
+    {"name":"Latest_Inbound_Message_ID","group":"recovery_tracking","owner":"recovery","aliases":["latest inbound message id","Latest Inbound Message ID","latest_message_id"]},
+    {"name":"Latest_Inbound_InReplyTo","group":"recovery_tracking","owner":"recovery","aliases":["latest inbound in-reply-to","Latest Inbound In-Reply-To","in_reply_to"]},
+    {"name":"Capture_Run_ID","group":"recovery_tracking","owner":"recovery","aliases":["capture run id","Capture Run ID","run_id"]},
+    {"name":"Capture_At","group":"recovery_tracking","owner":"recovery","aliases":["capture at","Capture At"]},
+    {"name":"Reply_Stream","group":"recovery_tracking","owner":"recovery","aliases":["reply stream","Reply Stream","stream"]},
+    {"name":"Reply_Analysis","group":"recovery_tracking","owner":"recovery","aliases":["reply analysis","Reply Analysis","analysis"]}
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "task_name": "youtube_kol_discovery",
+  "platform": "youtube",
+  "topic_query": "AI agents",
+  "country_include": ["US"],
+  "language_include": ["en"],
+  "l1_mode": "dual_channel",
+  "search_first": true,
+  "enable_discover_supplement": false,
+  "min_content_views_for_l2": 1000,
+  "search_queries": [
+    {
+      "name": "topic_core",
+      "query": "AI agents tutorial",
+      "limit": 20
+    },
+    {
+      "name": "topic_builders",
+      "query": "AI agents builder",
+      "limit": 20
+    },
+    {
+      "name": "topic_workflows",
+      "query": "AI agents workflow",
+      "limit": 20
+    },
+    {
+      "name": "topic_tools",
+      "query": "AI agents tools",
+      "limit": 20
+    }
+  ],
+  "seed_channels": [],
+  "shortlist_target": 50,
+  "provider_plan": {
+    "youtube": {
+      "content_first": {
+        "search_primary": "youtube.yt_dlp_search",
+        "discover_supplement": "youtube.api_most_popular",
+        "fallback": "youtube.multi_query_search_expand"
+      },
+      "account_first": {
+        "primary": "youtube.channel_lookup_from_search_results",
+        "fallback": "youtube.seed_channel_expansion"
+      }
+    }
+  }
+}

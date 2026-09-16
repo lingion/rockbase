@@ -1,0 +1,59 @@
+{
+  "task_name": "aully_hub_batch01_content_creators_2026_05_29",
+  "platform": "tiktok",
+  "topic_query": "Aully Hub content creators 2026-05-29",
+  "country_include": ["US"],
+  "language_include": ["en"],
+  "l1_mode": "dual_channel",
+  "limit_per_query": 30,
+  "min_content_views_for_l2": 3000,
+  "min_followers_for_l3": 5000,
+  "search_queries": [
+    {
+      "name": "creator_systems_ai",
+      "query": "creator systems ai",
+      "limit": 30
+    },
+    {
+      "name": "content_ops_ai",
+      "query": "content ops ai",
+      "limit": 30
+    },
+    {
+      "name": "research_workflow_creator",
+      "query": "research workflow creator",
+      "limit": 30
+    },
+    {
+      "name": "ai_content_stack",
+      "query": "ai content stack",
+      "limit": 30
+    },
+    {
+      "name": "creator_business_ai",
+      "query": "creator business ai",
+      "limit": 30
+    },
+    {
+      "name": "audience_research_creator",
+      "query": "audience research creator",
+      "limit": 30
+    }
+  ],
+  "seed_accounts": [],
+  "shortlist_target": 50,
+  "provider_plan": {
+    "tiktok": {
+      "content_first": {
+        "primary": "scrapecreators.tiktok.search_keyword",
+        "secondary": "scrapecreators.tiktok.search_hashtag",
+        "fallback": "browser_session_collector_pending"
+      },
+      "account_first": {
+        "primary": "scrapecreators.tiktok.search_users",
+        "secondary": "scrapecreators.tiktok.profile_videos",
+        "fallback": "tiktok_api_user_lookup"
+      }
+    }
+  }
+}

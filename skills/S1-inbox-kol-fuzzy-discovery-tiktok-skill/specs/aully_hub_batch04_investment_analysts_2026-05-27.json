@@ -1,0 +1,59 @@
+{
+  "task_name": "aully_hub_batch04_investment_analysts",
+  "platform": "tiktok",
+  "topic_query": "Aully Hub investment analysts",
+  "country_include": ["US"],
+  "language_include": ["en"],
+  "l1_mode": "dual_channel",
+  "limit_per_query": 30,
+  "min_content_views_for_l2": 2000,
+  "min_followers_for_l3": 3000,
+  "search_queries": [
+    {
+      "name": "investment_research_ai",
+      "query": "investment research ai",
+      "limit": 30
+    },
+    {
+      "name": "equity_research_workflow",
+      "query": "equity research workflow",
+      "limit": 30
+    },
+    {
+      "name": "vc_research_ai",
+      "query": "vc research ai",
+      "limit": 30
+    },
+    {
+      "name": "due_diligence_ai",
+      "query": "due diligence ai",
+      "limit": 30
+    },
+    {
+      "name": "market_mapping_ai",
+      "query": "market mapping ai",
+      "limit": 30
+    },
+    {
+      "name": "analyst_productivity",
+      "query": "analyst productivity ai",
+      "limit": 30
+    }
+  ],
+  "seed_accounts": [],
+  "shortlist_target": 60,
+  "provider_plan": {
+    "tiktok": {
+      "content_first": {
+        "primary": "scrapecreators.tiktok.search_keyword",
+        "secondary": "scrapecreators.tiktok.search_hashtag",
+        "fallback": "browser_session_collector_pending"
+      },
+      "account_first": {
+        "primary": "scrapecreators.tiktok.search_users",
+        "secondary": "scrapecreators.tiktok.profile_videos",
+        "fallback": "tiktok_api_user_lookup"
+      }
+    }
+  }
+}

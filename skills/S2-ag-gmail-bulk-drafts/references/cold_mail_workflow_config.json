@@ -1,0 +1,115 @@
+{
+  "workflow_name": "CoreStar Cold Mail",
+  "prompt_context": "You are filling Gmail Mail1 fields for CoreStar cold outreach. The script will assemble the final email body from approved blocks, so do not rewrite the whole email body.",
+  "extra_prompt_rules": [
+    "Choose only from the allowed Mail1_Variant values.",
+    "Use only information present in the provided row data.",
+    "Do not invent campaign names, specific videos, or performance claims."
+  ],
+  "allowed_variants": [
+    "A1_media_kit_soft",
+    "A2_rate_card_direct",
+    "B1_creator_specific_soft",
+    "B2_creator_specific_direct"
+  ],
+  "subject_patterns": {
+      "standard_collaboration": "Paid Collaboration: {display_name} x CoreStar Agency",
+      "campaign_oriented": "Paid Collaboration: Q2 AI Projects x {display_name} - CoreStar Agency",
+      "neutral_partnership": "Creator Partnership Inquiry: {display_name} x CoreStar Agency",
+      "fit_first": "Potential AI Campaign Fit: {display_name} x CoreStar Agency"
+  },
+  "templates": {
+    "sender_intro": {
+        "standard_intro": "I'm Steve from CoreStar Agency.",
+        "agency_positioning_intro": "I'm Steve from CoreStar Agency, where we help AI and tech brands work with creators whose audiences are a real fit.",
+        "light_commercial_intro": "I'm Steve from CoreStar Agency, and I'm reaching out regarding upcoming AI creator partnerships."
+    },
+    "credibility_block": {
+      "standard_credibility": "Our team has a strong track record in the AI and tech ecosystem.\nWe have delivered high-impact campaigns for leading brands including Skywork AI, Kling AI, Seedance, Alibaba, and TikTok.",
+      "fit_first_credibility": "We work closely with AI and tech brands that care about audience fit and content quality, not just broad reach.",
+      "short_credibility": "We support AI and tech brands on creator partnerships across campaign sourcing, fit assessment, and execution."
+    },
+    "variant_body": {
+      "shortlist_soft": "We are currently building out our shortlist for upcoming AI creator campaigns, and I would love to keep your profile in consideration where there is a strong audience fit.",
+      "rates_direct": "Given the alignment here, I would love to understand your current rates for dedicated videos and integrations.",
+      "fit_soft": "That is why I thought your profile would make sense to keep on hand for upcoming AI partnerships where fit matters more than broad distribution alone.",
+      "fit_direct": "Because the content fit already looks strong, I wanted to reach out directly and understand your current collaboration rates and preferred formats."
+    },
+    "ask_intro": {
+      "full_intake_intro": "Could you please send over the following:",
+      "media_kit_first_intro": "If you're open, I would love to review the following first:",
+      "rates_first_intro": "If available, could you share the following:"
+    },
+    "ask_items": {
+      "full_intake": [
+        "Links to all your active social channels",
+        "Your latest Media Kit",
+        "Current rates for all channels"
+      ],
+      "media_kit_first": [
+        "Your latest Media Kit",
+        "Links to your active channels"
+      ],
+      "rates_first": [
+        "Your current rates for dedicated videos and integrations",
+        "Any up-to-date media kit or audience overview if available"
+      ]
+    },
+    "closing": {
+      "standard_closing": "If there is a fit for an upcoming project, I would be happy to follow up with the exact brief and timeline.",
+      "fit_first_closing": "If there is a good fit, I can follow up with the exact product brief and commercial context before asking you to commit to anything."
+    },
+    "signature": {
+        "standard_signature": "Best regards,\nSteve\nCoreStar Agency"
+    }
+  },
+  "variants": {
+    "A1_media_kit_soft": {
+      "mail_mode": "A_unified",
+      "sender_intro": "standard_intro",
+      "credibility_block": "standard_credibility",
+      "variant_body": "shortlist_soft",
+      "ask_intro": "full_intake_intro",
+      "ask_items": "full_intake",
+      "closing": "standard_closing",
+      "signature": "standard_signature",
+      "subject_pattern": "campaign_oriented"
+    },
+    "A2_rate_card_direct": {
+      "mail_mode": "A_unified",
+      "sender_intro": "light_commercial_intro",
+      "credibility_block": "fit_first_credibility",
+      "variant_body": "rates_direct",
+      "ask_intro": "rates_first_intro",
+      "ask_items": "rates_first",
+      "closing": "fit_first_closing",
+      "signature": "standard_signature",
+      "subject_pattern": "standard_collaboration"
+    },
+    "B1_creator_specific_soft": {
+      "mail_mode": "B_creator_specific",
+      "sender_intro": "agency_positioning_intro",
+      "credibility_block": "fit_first_credibility",
+      "variant_body": "fit_soft",
+      "ask_intro": "full_intake_intro",
+      "ask_items": "full_intake",
+      "closing": "fit_first_closing",
+      "signature": "standard_signature",
+      "subject_pattern": "fit_first"
+    },
+    "B2_creator_specific_direct": {
+      "mail_mode": "B_creator_specific",
+      "sender_intro": "agency_positioning_intro",
+      "credibility_block": "short_credibility",
+      "variant_body": "fit_direct",
+      "ask_intro": "rates_first_intro",
+      "ask_items": "rates_first",
+      "closing": "fit_first_closing",
+      "signature": "standard_signature",
+      "subject_pattern": "fit_first"
+    }
+  },
+  "defaults": {
+    "mail_variant": "A1_media_kit_soft"
+  }
+}

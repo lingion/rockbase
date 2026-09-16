@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rockbase Agency | Reply Templates Cheatsheet</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0e14;
+            --accent-primary: #6366f1;
+            --accent-secondary: #a855f7;
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --text-main: #e2e8f0;
+            --text-muted: #94a3b8;
+            --success: #10b981;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background: radial-gradient(circle at 50% 50%, #1a1f2c 0%, #0b0e14 100%);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 40px 20px;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+
+        h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            background: linear-gradient(to right, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+            letter-spacing: -1px;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            font-weight: 300;
+        }
+
+        .search-container {
+            position: relative;
+            max-width: 600px;
+            margin: 0 auto 50px;
+        }
+
+        #searchBox {
+            width: 100%;
+            padding: 16px 24px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 50px;
+            color: white;
+            font-size: 1.1rem;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+            outline: none;
+        }
+
+        #searchBox:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.2);
+        }
+
+        .section-title {
+            font-size: 1.5rem;
+            margin: 40px 0 20px;
+            padding-left: 10px;
+            border-left: 4px solid var(--accent-primary);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+            gap: 24px;
+        }
+
+        .template-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 24px;
+            backdrop-filter: blur(15px);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            cursor: pointer;
+        }
+
+        .template-card:hover {
+            transform: translateY(-8px);
+            border-color: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.05);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .template-card::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at top left, rgba(99, 102, 241, 0.1), transparent);
+            pointer-events: none;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .template-code {
+            font-size: 0.8rem;
+            color: var(--accent-primary);
+            font-weight: 700;
+            background: rgba(99, 102, 241, 0.15);
+            padding: 4px 12px;
+            border-radius: 8px;
+            text-transform: uppercase;
+        }
+
+        .card-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+
+        .card-desc {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+            margin-bottom: 24px;
+            flex-grow: 1;
+        }
+
+        .btn-copy {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+        }
+
+        .btn-copy:hover {
+            filter: brightness(1.1);
+            transform: scale(1.02);
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-copy:active {
+            transform: scale(0.98);
+        }
+
+        @keyframes successPop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); background: var(--success); }
+            100% { transform: scale(1); }
+        }
+
+        .btn-copy.success {
+            background: var(--success);
+            animation: successPop 0.5s ease;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--success);
+            color: white;
+            padding: 12px 30px;
+            border-radius: 30px;
+            font-weight: 600;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 1000;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            h1 { font-size: 2.2rem; }
+            .grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Email Mastery</h1>
+        <p class="subtitle">Premium Reply Templates for Rockbase Agency</p>
+    </header>
+
+    <div class="search-container">
+        <input type="text" id="searchBox" placeholder="Search codes (RQ1), keywords, or purposes...">
+    </div>
+
+    <div id="templatesRoot">
+        <!-- Templates populated by JS -->
+    </div>
+</div>
+
+<div id="toast" class="toast">模板已成功复制！</div>
+
+<script>
+    const templates = [
+        {
+            category: "RQ | Quotes & Rates",
+            items: [
+                {
+                    code: "RQ1",
+                    title: "quoted_send_details",
+                    desc: "Use when creator already quoted but you want a better agency rate/initial test rate.",
+                    body: `Hi,\n\nThank you for sharing your rates and the additional details.\n\nWe do see a strong fit with the types of AI / tech campaigns we are currently reviewing. For first-time collaborations, our clients usually begin with tighter test budgets before expanding into larger placements.\n\nIf there is any flexibility for an initial agency test, we would be glad to review:\n- your best dedicated rate\n- your best integration rate\n- any first-collaboration or agency rate you may be open to\n\nOnce we complete this round of internal review, we will follow up with the most relevant creators for confirmed briefs.\n\nBest regards,\nAnnabel\nRockbase Agency`
+                },
+                {
+                    code: "RQ2",
+                    title: "quoted_accept_standard",
+                    desc: "Use when creator gave a usable rate. Keep relationship warm for future briefs.",
+                    body: `Hi,\n\nThank you for sharing your rates. I really appreciate it.\n\nI’ve noted everything on my side, and I do think there’s real potential for us to work together on the right AI / tech campaign.\n\nWe may not move immediately from this thread, simply because the matching process can take a little time on our end, but when the right brief comes up, I’ll definitely come back to you.\n\nThank you again for the time and openness. I’d honestly love to work with you on the right campaign.\n\nBest regards,\nAnnabel\nRockbase Agency`
+                },
+                {
+                    code: "RQ3",
+                    title: "quoted_accept_discounted",
+                    desc: "Use when creator offered a discount. Accept and hold warm.",
+                    body: `Hi,\n\nThank you for sharing the adjusted rate for a first collaboration. I really appreciate the flexibility.\n\nI’ve noted everything on my side, and I do think there’s real potential for us to work together on the right AI / tech campaign.\n\nWe may not move immediately from this thread, simply because the matching process can take a little time on our end, but when the right brief comes up, I’ll definitely come back to you.\n\nThank you again for the time and openness. I’d honestly love to work with you on the right campaign.\n\nBest regards,\nAnnabel\nRockbase Agency`
+                }
+            ]
+        },
+        {
+            category: "RI | Interest & Info",
+            items: [
+                {
+                    code: "RI1",
+                    title: "interested_request_rate",
+                    desc: "Interested but no rate provided. Request their dedicated/integration rates.",
+                    body: `Hi,\n\nThank you for your interest.\n\nTo help us assess fit internally, could you please share your current rates for:\n- a dedicated video\n- a sponsored integration\n- any other format you would recommend for a first collaboration\n\nOnce we complete this round of evaluation, we will follow up with the most relevant creators for confirmed briefs.\n\nBest regards,\nAnnabel\nRockbase Agency`
+                },
+                {
+                    code: "RI2",
+                    title: "interested_send_details_no_price",
+                    desc: "Sent media kit but still no price. Push for numeric rates.",
+                    body: `Hi,\n\nThank you for sending the additional details. We’ve received them on our side.\n\nTo help us continue the review efficiently, could you also share your current rates for the formats you would recommend for a first collaboration, especially:\n- dedicated video\n- sponsored integration\n- short-form placement, if applicable\n\nOnce we complete this review round, we will follow up with the best-fitting creators for confirmed opportunities.\n\nBest regards,\nAnnabel\nRockbase Agency`
+                },
+                {
+                    code: "RI3",
+                    title: "ask_budget_first",
+                    desc: "Creator asks for our budget first. State we are mapping rates first.",
+                    body: `Hi,\n\nThank you for your reply.\n\nBudget can vary depending on format, deliverables, and campaign fit, so at this stage we are first mapping creator rates before locking final allocations.\n\nIf possible, please share your standard starting rates for:\n- a dedicated video\n- a sponsored integration\n- short-form placement, if applicable\n\nThat will help us assess fit internally and decide whether to move forward with a more detailed brief.\n\nBest regards,\nAnnabel\nRockbase Agency`
+                },
+                {
+                    code: "RI4",
+                    title: "verification_or_brief_gate",
+                    desc: "Creator asks for ID verify or brief details first. Decline politely and hold.",
+                    body: `Hi,\n\nThank you for your reply, and that makes complete sense.\n\nFor now, I’d prefer not to send over partial materials too early while we’re still narrowing campaigns internally. I think it would be more useful to come back to you once I have a clearer fit and more concrete context to share.\n\nIf useful for our internal review in the meantime, you’re also very welcome to share your current rates for the formats you’d usually recommend.\n\nI really appreciate your time, and I hope we get the chance to pick this up again when the right brief comes through.\n\nBest regards,\nAnnabel\nRockbase Agency`
+                }
+            ]
+        }
+    ];
+
+    const root = document.getElementById('templatesRoot');
+    const searchBox = document.getElementById('searchBox');
+    const toast = document.getElementById('toast');
+
+    function render(filter = '') {
+        root.innerHTML = '';
+        const searchLower = filter.toLowerCase();
+
+        templates.forEach(section => {
+            const filteredItems = section.items.filter(item => 
+                item.code.toLowerCase().includes(searchLower) ||
+                item.title.toLowerCase().includes(searchLower) ||
+                item.desc.toLowerCase().includes(searchLower)
+            );
+
+            if (filteredItems.length > 0) {
+                const sectionEl = document.createElement('div');
+                sectionEl.innerHTML = `<h2 class="section-title">${section.category}</h2>`;
+                
+                const grid = document.createElement('div');
+                grid.className = 'grid';
+
+                filteredItems.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = 'template-card';
+                    card.innerHTML = `
+                        <div class="card-header">
+                            <span class="template-code">${item.code}</span>
+                        </div>
+                        <div class="card-title">${item.title}</div>
+                        <div class="card-desc">${item.desc}</div>
+                        <button class="btn-copy" onclick="copyContent(this, \`${item.body.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                            Copy Template
+                        </button>
+                    `;
+                    card.onclick = (e) => {
+                        if (e.target.tagName !== 'BUTTON') {
+                            card.querySelector('button').click();
+                        }
+                    };
+                    grid.appendChild(card);
+                });
+
+                sectionEl.appendChild(grid);
+                root.appendChild(sectionEl);
+            }
+        });
+    }
+
+    async function copyContent(btn, text) {
+        if (event) event.stopPropagation();
+        try {
+            await navigator.clipboard.writeText(text);
+            
+            // UI Feedback
+            btn.classList.add('success');
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = `
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Copied!
+            `;
+            
+            toast.classList.add('show');
+            setTimeout(() => {
+                btn.classList.remove('success');
+                btn.innerHTML = originalHTML;
+                toast.classList.remove('show');
+            }, 2000);
+        } catch (err) {
+            console.error('Failed to copy: ', err);
+            // Fallback for some environments
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand("copy");
+            document.body.removeChild(textArea);
+            
+            toast.innerText = "已尝试通过备选方案复制";
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2000);
+        }
+    }
+
+    searchBox.oninput = (e) => render(e.target.value);
+
+    // Initial Render
+    render();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "task_name": "instagram_kol_discovery",
+  "platform": "instagram",
+  "topic_query": "AI agents",
+  "country_include": ["US"],
+  "language_include": ["en"],
+  "l1_mode": "dual_channel",
+  "search_queries": [
+    {
+      "name": "topic_core",
+      "query": "#aiagents",
+      "limit": 20
+    }
+  ],
+  "seed_profiles": [],
+  "shortlist_target": 50,
+  "provider_plan": {
+    "instagram": {
+      "content_first": {
+        "primary": "instagram.instaloader_hashtag_search",
+        "fallback": "instagram.browser_session_later"
+      },
+      "account_first": {
+        "primary": "instagram.instaloader_profile_lookup",
+        "fallback": "instagram.seed_profile_expansion"
+      }
+    }
+  }
+}

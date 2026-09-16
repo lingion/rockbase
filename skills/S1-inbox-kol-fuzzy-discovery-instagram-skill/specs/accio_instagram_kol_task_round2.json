@@ -1,0 +1,23 @@
+{
+  "task_name": "instagram_kol_discovery_accio_round2",
+  "platform": "instagram",
+  "topic_query": "accio",
+  "country_include": ["US"],
+  "language_include": ["en"],
+  "l1_mode": "content_first",
+  "limit_per_query": 20,
+  "min_content_views_for_l2": 2000,
+  "min_followers_for_l3": 2000,
+  "search_queries": [
+    {
+      "name": "brand_review",
+      "query": "accio review",
+      "limit": 20
+    },
+    {
+      "name": "brand_ai",
+      "query": "accio ai",
+      "limit": 20
+    }
+  ]
+}

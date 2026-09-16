@@ -1,0 +1,29 @@
+{
+  "task_name": "tiktok_kol_discovery",
+  "platform": "tiktok",
+  "topic_query": "AI agents",
+  "country_include": ["US"],
+  "language_include": ["en"],
+  "l1_mode": "dual_channel",
+  "search_queries": [
+    {
+      "name": "topic_core",
+      "query": "AI agents",
+      "limit": 20
+    }
+  ],
+  "seed_accounts": [],
+  "shortlist_target": 50,
+  "provider_plan": {
+    "tiktok": {
+      "content_first": {
+        "primary": "tiktok.tiktok_api_search_or_trending",
+        "fallback": "tiktok.mediacrawler_browser_session"
+      },
+      "account_first": {
+        "primary": "tiktok.tiktok_api_user_lookup",
+        "fallback": "tiktok.seed_account_expansion"
+      }
+    }
+  }
+}
