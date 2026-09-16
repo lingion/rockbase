@@ -5,6 +5,7 @@ on_message 回调；宿主可借它模拟 KOL 自动回信等剧本。
 """
 from __future__ import annotations
 
+import socket
 import socketserver
 
 
@@ -25,6 +26,14 @@ def start_fake_smtp(on_message, host: str = "127.0.0.1", port: int = 0):
             self.wfile.write(b"235 ok\r\n")
 
         def handle(self) -> None:
+            self.request.settimeout(15)  # 防对端半开会挂死线程（test-reliability 教训）
+            try:
+                self._session()
+            except (socket.timeout, TimeoutError, ConnectionResetError,
+                    BrokenPipeError):
+                pass
+
+        def _session(self) -> None:
             self.wfile.write(b"220 fake-world ready\r\n")
             while True:
                 line = self.rfile.readline()

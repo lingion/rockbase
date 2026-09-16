@@ -38,15 +38,20 @@ def free_port() -> int:
 
 
 def api(port, method, path, body=None, key=KEY):
+    status, obj, _ = api_full(port, method, path, body, key)
+    return status, obj
+
+
+def api_full(port, method, path, body=None, key=KEY):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(
         f"http://127.0.0.1:{port}{path}", data=data, method=method,
         headers={"Content-Type": "application/json", "x-api-key": key})
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
-            return r.status, json.loads(r.read())
+            return r.status, json.loads(r.read()), dict(r.headers)
     except urllib.error.HTTPError as e:
-        return e.code, json.loads(e.read())
+        return e.code, json.loads(e.read()), dict(e.headers)
 
 
 SAMPLE_MIME = (
@@ -71,6 +76,10 @@ def main():
     check("health", api(port, "GET", "/api/health", key="")[0] == 200)
     code, _ = api(port, "GET", "/api/emails?email=x@company.test", key="wrong")
     check("bad key rejected", code == 401)
+    _, _, hdrs = api_full(port, "GET", "/api/health")
+    check("security headers", hdrs.get("X-Content-Type-Options") == "nosniff"
+          and hdrs.get("Cache-Control") == "no-store")
+    check("request id header", bool(hdrs.get("X-Request-Id")))
     code, r = api(port, "POST", "/api/inbound",
                   {"to": "a@company.test", "from": "k@x.invalid",
                    "subject": "hi", "text": "hello"})
@@ -78,6 +87,16 @@ def main():
     code, r = api(port, "GET", "/api/emails?email=a@company.test")
     check("list emails", r["data"]["count"] == 1
           and r["data"]["emails"][0]["content"] == "hello")
+
+    print("[1b] receiver 加固 (security-and-hardening)")
+    code, r = api(port, "POST", "/api/inbound",
+                  {"to": "big@company.test", "text": "x" * (10 * 1024 * 1024 + 1)})
+    check("oversized body 413", code == 413 and r["error"] == "payload_too_large")
+    code, r = api(port, "GET", "/api/emails?email=" + "a" * 300 + "@company.test")
+    check("overlong address 400", code == 400 and r["error"] == "invalid_address")
+    code, r = api(port, "POST", "/api/inbound",
+                  {"to": "bad@company.test", "raw": 12345})
+    check("mime error is generic", code == 400 and r["error"] == "mime_parse_failed")
 
     print("[2] MIME 解析 (raw inbound)")
     code, r = api(port, "POST", "/api/inbound",

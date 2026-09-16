@@ -26,6 +26,7 @@ from email.utils import make_msgid
 from pathlib import Path
 
 from .config import is_placeholder, load_config, require_real
+from .events import emit
 
 LINK_RE = re.compile(r"https?://", re.I)
 
@@ -182,16 +183,22 @@ def main(argv=None) -> int:
 
     with open(manifest_path, "a", encoding="utf-8") as mf:
         for p in planned:
+            t0 = time.monotonic()
             try:
                 mid = send_one(cfg, p)
                 rec = {"key": p["key"], "to": p["to"], "subject": p["subject"],
                        "status": "sent", "sent_at": now_utc().isoformat(),
                        "message_id": mid, "wave": p.get("wave", "")}
                 print(f"[sent] {p['to']} :: {p['subject']}")
+                emit("send_ok", to=p["to"], wave=p.get("wave", ""), key=p["key"],
+                     message_id=(mid or "")[:120],
+                     dur_ms=round((time.monotonic() - t0) * 1000, 1))
             except Exception as e:  # noqa: BLE001
                 rec = {"key": p["key"], "to": p["to"], "subject": p["subject"],
                        "status": "error", "sent_at": now_utc().isoformat(), "error": str(e)}
                 print(f"[error] {p['to']} :: {e}", file=sys.stderr)
+                emit("send_fail", to=p["to"], wave=p.get("wave", ""), key=p["key"],
+                     error=str(e)[:300], dur_ms=round((time.monotonic() - t0) * 1000, 1))
             mf.write(json.dumps(rec, ensure_ascii=False) + "\n")
             mf.flush()
     return 0

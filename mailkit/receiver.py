@@ -14,9 +14,11 @@
 from __future__ import annotations
 
 import argparse
+import hmac
 import json
 import sqlite3
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from email import message_from_bytes
@@ -24,6 +26,11 @@ from email.policy import default as default_policy
 from email.utils import parseaddr
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
+
+from .events import emit
+
+MAX_BODY_BYTES = 10 * 1024 * 1024  # 10MB： Enough for mail with attachments, prevents DoS from large payloads
+MAX_ADDR_LEN = 254  # RFC 5321 maximum length for email addresses
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS mailboxes (
@@ -146,13 +153,29 @@ def parse_mime(raw: bytes) -> dict:
 
 def make_handler(store: Store, api_key: str):
     class Handler(BaseHTTPRequestHandler):
-        def log_message(self, fmt, *args):  # 安静
+        def log_message(self, fmt, *args):  # 安静：访问日志走结构化事件
             pass
 
+        def _begin(self):
+            self._rid = uuid.uuid4().hex[:12]
+            self._t0 = time.monotonic()
+            self._status = None
+            self._route = ""
+
+        def _end(self, method: str):
+            emit("http_request", request_id=self._rid, method=method,
+                 route=self._route, status=self._status,
+                 dur_ms=round((time.monotonic() - self._t0) * 1000, 1))
+
         def _json(self, obj: dict, status: int = 200):
+            self._status = status
             body = json.dumps(obj, ensure_ascii=False).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
+            # security-and-hardening：禁 MIME 嗅探、禁缓存（邮件内容敏感）
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Request-Id", self._rid)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -161,10 +184,34 @@ def make_handler(store: Store, api_key: str):
             if not api_key:
                 return True
             given = self.headers.get("x-api-key") or (qs.get("api_key") or [""])[0]
-            return given == api_key
+            ok = hmac.compare_digest(given.encode(), api_key.encode())  # 防时序侧信道
+            if not ok:
+                emit("auth_failed", request_id=self._rid, peer=self.client_address[0])
+            return ok
+
+        class BodyTooLarge(Exception):
+            pass
+
+        MAX_DRAIN_BYTES = 32 * 1024 * 1024  # 超限请求体最多排空这么多，多了直接断连
+
+        def _drain(self, n: int) -> None:
+            while n > 0:
+                chunk = self.rfile.read(min(65536, n))
+                if not chunk:
+                    break
+                n -= len(chunk)
 
         def _body(self) -> dict:
-            n = int(self.headers.get("Content-Length") or 0)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                self.close_connection = True
+                return {}
+            if n > MAX_BODY_BYTES:
+                self._drain(min(n, self.MAX_DRAIN_BYTES))
+                if n > self.MAX_DRAIN_BYTES:
+                    self.close_connection = True
+                raise self.BodyTooLarge()
             raw = self.rfile.read(n) if n else b"{}"
             try:
                 return json.loads(raw)
@@ -172,68 +219,108 @@ def make_handler(store: Store, api_key: str):
                 return {}
 
         def do_GET(self):
-            u = urlparse(self.path)
-            qs = parse_qs(u.query)
-            if u.path == "/api/health":
-                return self._json({"ok": True, "time": utcnow()})
-            if not self._authed(qs):
-                return self._json({"success": False, "error": "unauthorized"}, 401)
-            if u.path == "/api/emails":
-                email = (qs.get("email") or [""])[0].strip().lower()
-                if not email:
-                    return self._json({"success": False,
-                                       "error": "missing_email_parameter"}, 400)
-                emails = store.list_by_address(email)
-                return self._json({"success": True,
-                                   "data": {"emails": emails, "count": len(emails)}})
-            return self._json({"success": False, "error": "not_found"}, 404)
+            self._begin()
+            try:
+                u = urlparse(self.path)
+                self._route = u.path
+                qs = parse_qs(u.query)
+                if u.path == "/api/health":
+                    return self._json({"ok": True, "time": utcnow()})
+                if not self._authed(qs):
+                    return self._json({"success": False, "error": "unauthorized"}, 401)
+                if u.path == "/api/emails":
+                    email = (qs.get("email") or [""])[0].strip().lower()
+                    if not email:
+                        return self._json({"success": False,
+                                           "error": "missing_email_parameter"}, 400)
+                    if len(email) > MAX_ADDR_LEN:
+                        return self._json({"success": False,
+                                           "error": "invalid_address"}, 400)
+                    emails = store.list_by_address(email)
+                    return self._json({"success": True,
+                                       "data": {"emails": emails, "count": len(emails)}})
+                return self._json({"success": False, "error": "not_found"}, 404)
+            except Exception as e:  # noqa: BLE001 —— 内部细节只进事件日志，不回给调用方
+                emit("handler_error", request_id=self._rid, route=u.path,
+                     error=str(e)[:300])
+                return self._json({"success": False, "error": "internal_error"}, 500)
+            finally:
+                self._end("GET")
 
         def do_POST(self):
-            u = urlparse(self.path)
-            qs = parse_qs(u.query)
-            if not self._authed(qs):
-                return self._json({"success": False, "error": "unauthorized"}, 401)
-            body = self._body()
-            if u.path == "/api/mailboxes":
-                addr = (body.get("address") or body.get("email") or "").strip().lower()
-                if not addr or "@" not in addr:
-                    return self._json({"success": False, "error": "invalid_address"}, 400)
-                mbx_id = store.ensure_mailbox(addr)
-                return self._json({"success": True,
-                                   "data": {"id": mbx_id, "address": addr}})
-            if u.path == "/api/inbound":
-                to = (body.get("to") or body.get("address") or "").strip().lower()
-                if not to:
-                    return self._json({"success": False, "error": "missing_to"}, 400)
-                if body.get("raw") and not body.get("text") and not body.get("html"):
-                    raw = body["raw"]
-                    try:
-                        parsed = parse_mime(raw.encode("utf-8", "surrogateescape")
-                                            if isinstance(raw, str) else raw)
-                        body = {**parsed, **{k: v for k, v in body.items()
-                                             if k != "raw" and v}}
-                        to = (body.get("to") or to).lower()
-                    except Exception as e:  # noqa: BLE001
+            self._begin()
+            try:
+                u = urlparse(self.path)
+                self._route = u.path
+                qs = parse_qs(u.query)
+                if not self._authed(qs):
+                    return self._json({"success": False, "error": "unauthorized"}, 401)
+                try:
+                    body = self._body()
+                except self.BodyTooLarge:
+                    return self._json({"success": False,
+                                       "error": "payload_too_large"}, 413)
+                if u.path == "/api/mailboxes":
+                    addr = (body.get("address") or body.get("email") or "").strip().lower()
+                    if not addr or "@" not in addr or len(addr) > MAX_ADDR_LEN:
                         return self._json({"success": False,
-                                           "error": f"mime_parse_failed: {e}"}, 400)
-                mbx_id = store.ensure_mailbox(to)
-                mid = store.put_message(mbx_id, body)
-                return self._json({"success": True, "data": {"id": mid}})
-            return self._json({"success": False, "error": "not_found"}, 404)
+                                           "error": "invalid_address"}, 400)
+                    mbx_id = store.ensure_mailbox(addr)
+                    return self._json({"success": True,
+                                       "data": {"id": mbx_id, "address": addr}})
+                if u.path == "/api/inbound":
+                    to = (body.get("to") or body.get("address") or "").strip().lower()
+                    if not to or len(to) > MAX_ADDR_LEN:
+                        return self._json({"success": False, "error": "missing_to"
+                                           if not to else "invalid_address"}, 400)
+                    if body.get("raw") and not body.get("text") and not body.get("html"):
+                        raw = body["raw"]
+                        try:
+                            parsed = parse_mime(raw.encode("utf-8", "surrogateescape")
+                                                if isinstance(raw, str) else raw)
+                            body = {**parsed, **{k: v for k, v in body.items()
+                                                 if k != "raw" and v}}
+                            to = (body.get("to") or to).lower()
+                        except Exception as e:  # noqa: BLE001
+                            emit("mime_parse_failed", request_id=self._rid,
+                                 error=str(e)[:300])
+                            return self._json({"success": False,
+                                               "error": "mime_parse_failed"}, 400)
+                    mbx_id = store.ensure_mailbox(to)
+                    mid = store.put_message(mbx_id, body)
+                    emit("inbound_accepted", request_id=self._rid, to=to,
+                         external_id=(body.get("external_id") or "")[:120])
+                    return self._json({"success": True, "data": {"id": mid}})
+                return self._json({"success": False, "error": "not_found"}, 404)
+            except Exception as e:  # noqa: BLE001
+                emit("handler_error", request_id=self._rid, route=self._route,
+                     error=str(e)[:300])
+                return self._json({"success": False, "error": "internal_error"}, 500)
+            finally:
+                self._end("POST")
 
         def do_DELETE(self):
-            u = urlparse(self.path)
-            qs = parse_qs(u.query)
-            if not self._authed(qs):
-                return self._json({"success": False, "error": "unauthorized"}, 401)
-            if u.path == "/api/emails/clear":
-                email = (qs.get("email") or [""])[0].strip().lower()
-                if not email:
-                    return self._json({"success": False,
-                                       "error": "missing_email_parameter"}, 400)
-                return self._json({"success": True, "data":
-                                   {"count": store.clear(email)}})
-            return self._json({"success": False, "error": "not_found"}, 404)
+            self._begin()
+            try:
+                u = urlparse(self.path)
+                self._route = u.path
+                qs = parse_qs(u.query)
+                if not self._authed(qs):
+                    return self._json({"success": False, "error": "unauthorized"}, 401)
+                if u.path == "/api/emails/clear":
+                    email = (qs.get("email") or [""])[0].strip().lower()
+                    if not email:
+                        return self._json({"success": False,
+                                           "error": "missing_email_parameter"}, 400)
+                    return self._json({"success": True, "data":
+                                       {"count": store.clear(email)}})
+                return self._json({"success": False, "error": "not_found"}, 404)
+            except Exception as e:  # noqa: BLE001
+                emit("handler_error", request_id=self._rid, route=self._route,
+                     error=str(e)[:300])
+                return self._json({"success": False, "error": "internal_error"}, 500)
+            finally:
+                self._end("DELETE")
 
     return Handler
 

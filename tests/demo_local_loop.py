@@ -95,6 +95,21 @@ def inbox(base_url, api_key, addr):
         return json.load(resp)["data"]["emails"]
 
 
+def wait_inbox(base_url, api_key, addr, pred, timeout=15.0):
+    """轮询到条件满足（email-testing skill：轮询，🚫盲睡）。"""
+    end = time.monotonic() + timeout
+    while True:
+        try:
+            mails = inbox(base_url, api_key, addr)
+        except Exception:
+            mails = []
+        if pred(mails):
+            return mails
+        if time.monotonic() >= end:
+            raise AssertionError(f"inbox poll timeout: {addr}")
+        time.sleep(0.05)
+
+
 def main() -> int:
     tmp = tempfile.mkdtemp(prefix="mailkit-demo-")
     print(f"工作区: {tmp}")
@@ -192,7 +207,10 @@ workdir = "workbench"
     world.schedule(our_mail2_mid, "kol-a@kol.example", "Re: Partnership intro - Alpha",
                    "$2200 final. Deal?")
     world.flush()
-    time.sleep(0.3)
+    # A 的第二次回信落我们邮箱（partnerships@），不能轮询 kol-a 自己的地址
+    wait_inbox(base_url, api_key, "partnerships@demo-company.example",
+               lambda ms: sum(1 for m in ms
+                              if m["subject"] == "Re: Partnership intro - Alpha") >= 2)
     run(["mailkit.master_sync", "sent", "--config", "config.toml",
          "--master", "master.csv", "--execute"], tmp)
     run(["mailkit.master_sync", "replies", "--config", "config.toml",

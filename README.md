@@ -58,8 +58,11 @@ CSV 格式：`email,name,subject,body`，正文可用 `{name}`。
 | `mailkit/postfix_pipe.py` | Postfix 管道：stdin MIME → /api/inbound |
 | `mailkit/fetch_replies.py` | 轮询收信端 → S3 格式 CSV/JSON |
 | `mailkit/master_sync.py` | replies/sent → master CSV 回填（wave 归因，dry-run 默认） |
+| `mailkit/events.py` | 结构化事件日志（JSON 行走 stderr，人读输出走 stdout） |
 | `mailkit/fake_smtp.py` | 本机模拟 SMTP 对端（彩排/测试专用，🚫生产） |
 | `tests/demo_local_loop.py` | 本机全自动收发彩排 |
+| `docs/skills-map.md` | 170 个 skill 与 mailkit 的融合映射（哪个关注点用了哪个 skill） |
+| `docs/adr/0001-stdlib-only.md` | ADR：保持纯 stdlib 零第三方依赖 |
 | `deploy/postfix-notes.md` | 路线B 服务器部署（DNS/Postfix/systemd） |
 
 ## 本机彩排（不碰外网）
