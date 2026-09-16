@@ -62,6 +62,7 @@ CSV 格式：`email,name,subject,body`，正文可用 `{name}`。
 | `mailkit/fake_smtp.py` | 本机模拟 SMTP 对端（彩排/测试专用，🚫生产） |
 | `tests/demo_local_loop.py` | 本机全自动收发彩排 |
 | `docs/skills-map.md` | 170 个 skill 与 mailkit 的融合映射（哪个关注点用了哪个 skill） |
+| `docs/ROADMAP.md` | 全项目路线图：S1→S5 工作流地图、人工干预点清单、阶段计划 |
 | `docs/adr/0001-stdlib-only.md` | ADR：保持纯 stdlib 零第三方依赖 |
 | `deploy/postfix-notes.md` | 路线B 服务器部署（DNS/Postfix/systemd） |
 
