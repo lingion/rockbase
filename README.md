@@ -1,6 +1,9 @@
-# Rockbase Skills Release v2.0.0
+# Rockbase — 达人营销工作流项目
 
-这是一个脱敏的 Rockbase 达人营销工作流工具包。它包含发现、资料补全、邮件草稿、回复运营、活跃资产化、Brief 匹配、交付检查、OCR、表格同步、查重和发票生成能力。
+本仓库是 Rockbase 项目的统一代码库,包含两部分:
+
+- **工作流工具包**(仓库根目录):发现、资料补全、邮件草稿、回复运营、活跃资产化、Brief 匹配、交付检查、OCR、表格同步、查重和发票生成能力(17 个 Skill,S1→S5)。
+- **邮件收发层**([mailkit/](mailkit/README.md)):自建 SMTP 收发的自动化层,用于替代 Gmail 手工操作,覆盖 S2 外联发送与 S3 回复接收,含本机彩排闭环与路线图([mailkit/docs/ROADMAP.md](mailkit/docs/ROADMAP.md))。
 
 ## 先从这里开始
 
