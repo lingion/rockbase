@@ -2,6 +2,9 @@
 """S2 发信：CSV → 公司 SMTP。默认 dry-run；带节奏限制、断点续传、首封链接守卫。
 
 CSV 列: email,name,subject,body   （subject/body 里可用 {name} 占位）
+  兼容 S2 job manifest: --to-field to --name-field display_name
+  回信模式: 行内含 in_reply_to 列（可选 references）→ 挂线程头发送，
+  豁免首触链接守卫与节奏上限（回信是 1:1 应答，不是冷触达）
 用法:
   python -m mailkit.send --config config.toml --csv batch.csv            # dry-run
   python -m mailkit.send --config config.toml --csv batch.csv --execute  # 真发
@@ -62,6 +65,10 @@ def plan(cfg: dict, rows: list[dict], manifest: list[dict]) -> tuple[list[dict],
         name = (row.get("name") or "").strip()
         subject = (row.get("subject") or "").format(name=name)
         body = (row.get("body") or "").format(name=name)
+        # 回信类：显式挂线程头，1:1 应答，不走冷触达守卫/限速
+        in_reply_to = (row.get("in_reply_to") or "").strip()
+        references = (row.get("references") or "").strip()
+        is_reply = bool(in_reply_to or references)
         key = msg_key(to, subject)
         if not to:
             skipped.append({"row": row, "reason": "missing_email"})
@@ -70,24 +77,27 @@ def plan(cfg: dict, rows: list[dict], manifest: list[dict]) -> tuple[list[dict],
             skipped.append({"row": {"email": to, "subject": subject}, "reason": "already_sent"})
             continue
         first_touch = to.lower() not in contacted
-        if first_touch and not allow_links and LINK_RE.search(body):
+        if not is_reply and first_touch and not allow_links and LINK_RE.search(body):
             skipped.append({"row": {"email": to, "subject": subject},
                             "reason": "first_touch_link_guard(SOP: 首封不带外链)"})
             continue
         if footer and footer not in body:
             body = f"{body}\n\n--\n{footer}"
-        if in_window >= max_w:
-            skipped.append({"row": {"email": to, "subject": subject},
-                            "reason": f"rate_window({max_w}/{win}min 已满)"})
-            continue
-        if in_day >= cap:
-            skipped.append({"row": {"email": to, "subject": subject},
-                            "reason": f"daily_cap({cap}) 已满"})
-            continue
-        in_window += 1
-        in_day += 1
+        if not is_reply:
+            if in_window >= max_w:
+                skipped.append({"row": {"email": to, "subject": subject},
+                                "reason": f"rate_window({max_w}/{win}min 已满)"})
+                continue
+            if in_day >= cap:
+                skipped.append({"row": {"email": to, "subject": subject},
+                                "reason": f"daily_cap({cap}) 已满"})
+                continue
+            in_window += 1
+            in_day += 1
         planned.append({"key": key, "to": to, "name": name,
-                        "subject": subject, "body": body, "first_touch": first_touch})
+                        "subject": subject, "body": body, "first_touch": first_touch,
+                        "in_reply_to": in_reply_to, "references": references,
+                        "is_reply": is_reply})
     return planned, skipped
 
 
@@ -102,6 +112,10 @@ def send_one(cfg: dict, item: dict) -> str:
     message["From"] = f'{smtp_cfg.get("from_name", "")} <{from_addr}>'
     message["To"] = item["to"]
     message["Subject"] = item["subject"]
+    if item.get("in_reply_to"):
+        message["In-Reply-To"] = item["in_reply_to"]
+    if item.get("references"):
+        message["References"] = item["references"]
     message.set_content(item["body"])
 
     port = int(smtp_cfg.get("port", 587))
@@ -124,6 +138,10 @@ def main(argv=None) -> int:
     ap.add_argument("--config", default="config.toml")
     ap.add_argument("--csv", required=True)
     ap.add_argument("--execute", action="store_true", help="真正发送；缺省为 dry-run")
+    ap.add_argument("--to-field", default="email")
+    ap.add_argument("--name-field", default="name")
+    ap.add_argument("--subject-field", default="subject")
+    ap.add_argument("--body-field", default="body")
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
@@ -133,7 +151,16 @@ def main(argv=None) -> int:
 
     with open(args.csv, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
-    planned, skipped = plan(cfg, rows, load_manifest(manifest_path))
+    # 字段映射成 mailkit 标准列（email/name/subject/body + 可选 in_reply_to/references）
+    norm = []
+    for r in rows:
+        q = dict(r)
+        for std, src in (("email", args.to_field), ("name", args.name_field),
+                         ("subject", args.subject_field), ("body", args.body_field)):
+            if std not in q or q.get(std) in (None, ""):
+                q[std] = (r.get(src) or "").strip()
+        norm.append(q)
+    planned, skipped = plan(cfg, norm, load_manifest(manifest_path))
 
     for s in skipped:
         print(f"[skip] {s['row'].get('email')} :: {s['reason']}")
@@ -144,7 +171,7 @@ def main(argv=None) -> int:
     if not args.execute:
         print(f"[dry-run] 计划发送 {len(planned)} 封（加 --execute 真发）:")
         for p in planned:
-            tag = "首触" if p["first_touch"] else "跟进"
+            tag = "回信" if p["is_reply"] else ("首触" if p["first_touch"] else "跟进")
             print(f"  - [{tag}] {p['to']} :: {p['subject']}")
         return 0
 

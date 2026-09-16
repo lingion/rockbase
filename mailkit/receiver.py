@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS messages (
   subject TEXT,
   text_body TEXT,
   html_body TEXT,
+  in_reply_to TEXT DEFAULT '',
+  refs TEXT DEFAULT '',
   raw_json TEXT,
   received_at TEXT NOT NULL,
   FOREIGN KEY(mailbox_id) REFERENCES mailboxes(id)
@@ -82,11 +84,12 @@ class Store:
         with _lock:
             self.conn.execute(
                 "INSERT INTO messages(id,mailbox_id,external_id,from_addr,to_addr,"
-                "subject,text_body,html_body,raw_json,received_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                "subject,text_body,html_body,in_reply_to,refs,raw_json,received_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (mid, mbx_id, msg.get("external_id") or uuid.uuid4().hex,
                  (msg.get("from") or "").lower(), (msg.get("to") or "").lower(),
                  msg.get("subject") or "", msg.get("text") or "", msg.get("html") or "",
+                 msg.get("in_reply_to") or "", msg.get("references") or "",
                  json.dumps(msg.get("raw") or {}, ensure_ascii=False),
                  msg.get("received_at") or utcnow()))
             self.conn.commit()
@@ -95,12 +98,14 @@ class Store:
     def list_by_address(self, address: str, limit: int = 100) -> list[dict]:
         rows = self.conn.execute(
             "SELECT id,external_id,to_addr,from_addr,subject,text_body,html_body,"
-            "received_at FROM messages WHERE to_addr=? ORDER BY received_at DESC LIMIT ?",
+            "in_reply_to,refs,received_at FROM messages "
+            "WHERE to_addr=? ORDER BY received_at DESC LIMIT ?",
             (address.lower().strip(), limit)).fetchall()
         return [{"id": r["id"], "external_id": r["external_id"],
                  "email_address": r["to_addr"], "from_address": r["from_addr"],
                  "subject": r["subject"], "content": r["text_body"],
-                 "html_content": r["html_body"], "created_at": r["received_at"]}
+                 "html_content": r["html_body"], "in_reply_to": r["in_reply_to"],
+                 "references": r["refs"], "created_at": r["received_at"]}
                 for r in rows]
 
     def clear(self, address: str) -> int:
@@ -134,7 +139,9 @@ def parse_mime(raw: bytes) -> dict:
     return {"from": parseaddr(str(msg.get("From", "")))[1].lower(),
             "to": parseaddr(str(to_hdr or ""))[1].lower(),
             "subject": str(msg.get("Subject", "")), "text": text, "html": html,
-            "external_id": str(msg.get("Message-ID", "")).strip("<>")}
+            "external_id": str(msg.get("Message-ID", "")).strip("<>"),
+            "in_reply_to": str(msg.get("In-Reply-To", "")).strip(),
+            "references": " ".join(str(msg.get("References", "")).split())}
 
 
 def make_handler(store: Store, api_key: str):

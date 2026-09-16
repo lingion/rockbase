@@ -65,6 +65,8 @@ def main(argv=None) -> int:
                 "body": e.get("content") or "",
                 "received_at": e.get("created_at") or "",
                 "external_id": ext,
+                "in_reply_to": e.get("in_reply_to") or "",
+                "references": e.get("references") or "",
             })
     rows.sort(key=lambda r: r["received_at"])
 

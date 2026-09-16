@@ -178,6 +178,95 @@ def main():
     check("reply captured", len(rows) >= 1
           and rows[0]["reply_from"] == "kol@example.invalid")
 
+    print("[6] master_sync replies（收件回填 + wave 归因）")
+    reply_mime = (
+        b"From: KOL Two <kol2@example.invalid>\r\n"
+        b"To: partnerships@company.test\r\n"
+        b"Subject: Re: collab offer\r\n"
+        b"In-Reply-To: <out-111@company.test>\r\n"
+        b"References: <out-111@company.test>\r\n"
+        b"Message-ID: <rep-777@example.invalid>\r\n"
+        b"Date: Wed, 16 Sep 2026 12:00:00 +0000\r\n"
+        b"Content-Type: text/plain; charset=utf-8\r\n\r\n"
+        b"My rate for a dedicated video is $2500.\r\n")
+    code, _ = api(port, "POST", "/api/inbound",
+                  {"to": "partnerships@company.test",
+                   "raw": reply_mime.decode()})
+    check("threaded reply inbound", code == 200)
+    code, r = api(port, "GET", "/api/emails?email=partnerships@company.test")
+    threaded = [e for e in r["data"]["emails"] if e["external_id"] == "rep-777@example.invalid"]
+    check("thread headers stored", threaded
+          and threaded[0]["in_reply_to"] == "<out-111@company.test>")
+
+    master = tmp / "master.csv"
+    with open(master, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["账号ID", "频道/作者名称", "Reply_Contact_Email", "Pipeline_Stage",
+                    "Mail1_Status", "Outbound_Message_IDs"])
+        w.writerow(["C2", "KOL Two", "kol2@example.invalid", "M1_2_Waiting",
+                    "sent", "mail1:out-111@company.test"])
+    p = subprocess.run(
+        [sys.executable, "-m", "mailkit.master_sync", "replies",
+         "--config", str(cfg_path), "--master", str(master)],
+        capture_output=True, text=True, cwd=ROOT)
+    check("sync dry-run hit", p.returncode == 0 and "命中 1 行" in p.stdout
+          and "wave=mail1" in p.stdout)
+    check("sync dry-run no write", "dry-run" in p.stdout)
+    p = subprocess.run(
+        [sys.executable, "-m", "mailkit.master_sync", "replies",
+         "--config", str(cfg_path), "--master", str(master), "--execute"],
+        capture_output=True, text=True, cwd=ROOT)
+    with open(master, newline="", encoding="utf-8-sig") as f:
+        mrow = list(csv.DictReader(f))[0]
+    check("wave1 attributed", mrow["Mail1_Status"] == "replied"
+          and mrow["Reply_Stage"] == "mail1_replied_waiting_mail2"
+          and mrow["Pipeline_Stage"] == "M1_2_Replied_Review"
+          and "$2500" in mrow["Mail1_Reply"]
+          and mrow["Latest_Inbound_InReplyTo"] == "<out-111@company.test>")
+    p = subprocess.run(
+        [sys.executable, "-m", "mailkit.master_sync", "replies",
+         "--config", str(cfg_path), "--master", str(master), "--execute"],
+        capture_output=True, text=True, cwd=ROOT)
+    check("idempotent resync", "已同步跳过 1" in p.stdout and "命中 0 行" in p.stdout)
+
+    print("[7] master_sync sent（发件回执）")
+    mf2 = tmp / "wb" / "send_manifest2.jsonl"
+    mf2.write_text(json.dumps({"key": "k", "to": "kol2@example.invalid",
+                               "subject": "Re: collab offer", "status": "sent",
+                               "sent_at": "2026-09-16T13:00:00+00:00",
+                               "message_id": "<out-222@company.test>"}) + "\n")
+    p = subprocess.run(
+        [sys.executable, "-m", "mailkit.master_sync", "sent",
+         "--config", str(cfg_path), "--master", str(master),
+         "--wave", "mail2", "--manifest", str(mf2)],
+        capture_output=True, text=True, cwd=ROOT)
+    check("sent dry-run hit", p.returncode == 0 and "命中 1 行" in p.stdout)
+    p = subprocess.run(
+        [sys.executable, "-m", "mailkit.master_sync", "sent",
+         "--config", str(cfg_path), "--master", str(master),
+         "--wave", "mail2", "--manifest", str(mf2), "--execute"],
+        capture_output=True, text=True, cwd=ROOT)
+    with open(master, newline="", encoding="utf-8-sig") as f:
+        mrow = list(csv.DictReader(f))[0]
+    check("sent writeback", mrow["Mail2_Status"] == "sent"
+          and "mail2:out-222@company.test" in mrow["Outbound_Message_IDs"]
+          and mrow["Mail2_Sent_At"] == "2026-09-16T13:00:00+00:00")
+
+    print("[8] send.py 字段映射 + 回信模式")
+    reply_csv = tmp / "reply_batch.csv"
+    with open(reply_csv, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["to", "display_name", "subject", "body", "in_reply_to"])
+        w.writerow(["kol@example.invalid", "Kol Person", "Re: collab offer",
+                    "Sounds good, sending the agreement. https://agree.link",
+                    "<rep-777@example.invalid>"])
+    p = subprocess.run(
+        [sys.executable, "-m", "mailkit.send", "--config", str(cfg_path),
+         "--csv", str(reply_csv), "--to-field", "to", "--name-field", "display_name"],
+        capture_output=True, text=True, cwd=ROOT)
+    check("reply planned exempt from guards",
+          p.returncode == 0 and "计划发送 1 封" in p.stdout and "[回信]" in p.stdout)
+
     srv.shutdown()
     print(f"\nALL PASS ({len(PASS)} checks)")
     return 0

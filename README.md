@@ -8,6 +8,8 @@ S2 发信:  CSV → mailkit.send → 公司 SMTP (默认 dry-run + 限速 + 断�
 S3 收信:  KOL 回信 → [A] Cloudflare Email Routing → mailgofer
                   → [B] Postfix catch-all → postfix_pipe → receiver.py(SQLite)
 S3 回收:  mailkit.fetch_replies → replies_YYYY-MM-DD.csv/json → S3 流水线
+S3 回填:  mailkit.master_sync → replies 写回 master CSV（wave 归因 + 字段字典协议）
+S2 回执:  mailkit.master_sync sent → send manifest 写回 master（MailN_Status/Outbound_Message_IDs）
 ```
 
 ## 快速开始
@@ -25,9 +27,19 @@ python3 -m mailkit.send --config config.toml --csv batch.csv --execute
 
 # 回复回收
 python3 -m mailkit.fetch_replies --config config.toml
+
+# 回填 master CSV（S3 字段字典协议；默认 dry-run，--execute 才写）
+python3 -m mailkit.master_sync replies --config config.toml --master master.csv
+python3 -m mailkit.master_sync replies --config config.toml --master master.csv --execute
+
+# 发送回执回填（MailN_Status=sent + Outbound_Message_IDs）
+python3 -m mailkit.master_sync sent --config config.toml --master master.csv --wave mail1 --execute
 ```
 
 CSV 格式：`email,name,subject,body`，正文可用 `{name}`。
+兼容 S2 job manifest：`--to-field to --name-field display_name`。
+回信模式：行内带 `in_reply_to`（可选 `references`）列 → 挂线程头发送，
+豁免首触链接守卫与节奏上限。
 
 ## 内置守卫（对齐 Rockbase SOP）
 
@@ -45,6 +57,7 @@ CSV 格式：`email,name,subject,body`，正文可用 `{name}`。
 | `mailkit/receiver.py` | 自建收信端，mailgofer 兼容 API + SQLite |
 | `mailkit/postfix_pipe.py` | Postfix 管道：stdin MIME → /api/inbound |
 | `mailkit/fetch_replies.py` | 轮询收信端 → S3 格式 CSV/JSON |
+| `mailkit/master_sync.py` | replies/sent → master CSV 回填（wave 归因，dry-run 默认） |
 | `deploy/postfix-notes.md` | 路线B 服务器部署（DNS/Postfix/systemd） |
 
 ## 待填占位符清单
