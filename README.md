@@ -58,7 +58,24 @@ CSV 格式：`email,name,subject,body`，正文可用 `{name}`。
 | `mailkit/postfix_pipe.py` | Postfix 管道：stdin MIME → /api/inbound |
 | `mailkit/fetch_replies.py` | 轮询收信端 → S3 格式 CSV/JSON |
 | `mailkit/master_sync.py` | replies/sent → master CSV 回填（wave 归因，dry-run 默认） |
+| `mailkit/fake_smtp.py` | 本机模拟 SMTP 对端（彩排/测试专用，🚫生产） |
+| `tests/demo_local_loop.py` | 本机全自动收发彩排 |
 | `deploy/postfix-notes.md` | 路线B 服务器部署（DNS/Postfix/systemd） |
+
+## 本机彩排（不碰外网）
+
+一台电脑同时扮演「我们的服务器」和「KOL 外部世界」，全自动跑完
+mail1 首触 → KOL 自动回信 → 收件入库 → master 硬归因回填 →
+mail2 回信（挂线程头、豁免守卫）→ 二次回信 → mail2 回填 的完整剧本：
+
+```bash
+python3 tests/demo_local_loop.py
+```
+
+全程 127.0.0.1 + tempfile，跑完自动清理。终态 master 应看到：
+A（mail1+mail2 双 replied、Outbound 两个 Message-ID）、B（mail1 replied）、
+C（mail1 sent 未回）。这是上线前预演；真部署只差 config 填真值 +
+`deploy/postfix-notes.md` 的服务器步骤。
 
 ## 待填占位符清单
 

@@ -205,6 +205,8 @@ def main():
                     "Mail1_Status", "Outbound_Message_IDs"])
         w.writerow(["C2", "KOL Two", "kol2@example.invalid", "M1_2_Waiting",
                     "sent", "mail1:out-111@company.test"])
+        w.writerow(["C3", "KOL Three", "kol3@example.invalid", "M1_2_Waiting",
+                    "", ""])
     p = subprocess.run(
         [sys.executable, "-m", "mailkit.master_sync", "replies",
          "--config", str(cfg_path), "--master", str(master)],
@@ -251,6 +253,25 @@ def main():
     check("sent writeback", mrow["Mail2_Status"] == "sent"
           and "mail2:out-222@company.test" in mrow["Outbound_Message_IDs"]
           and mrow["Mail2_Sent_At"] == "2026-09-16T13:00:00+00:00")
+
+    # 行内 wave 列优先于 --wave 默认值（mail2 批次里混入 mail1 回信回执不误标）
+    mf3 = tmp / "wb" / "send_manifest3.jsonl"
+    mf3.write_text(json.dumps({"key": "k", "to": "kol3@example.invalid",
+                               "subject": "Re: collab offer", "status": "sent",
+                               "sent_at": "2026-09-16T14:00:00+00:00",
+                               "message_id": "<out-333@company.test>",
+                               "wave": "mail1"}) + "\n")
+    p = subprocess.run(
+        [sys.executable, "-m", "mailkit.master_sync", "sent",
+         "--config", str(cfg_path), "--master", str(master),
+         "--wave", "mail2", "--manifest", str(mf3), "--execute"],
+        capture_output=True, text=True, cwd=ROOT)
+    with open(master, newline="", encoding="utf-8-sig") as f:
+        rows3 = list(csv.DictReader(f))
+    r3 = next(r for r in rows3 if r.get("Reply_Contact_Email") == "kol3@example.invalid")
+    check("wave column overrides --wave", r3["Mail1_Status"] == "sent"
+          and "mail1:out-333@company.test" in r3["Outbound_Message_IDs"]
+          and r3["Mail2_Status"] != "sent")
 
     print("[8] send.py 字段映射 + 回信模式")
     reply_csv = tmp / "reply_batch.csv"

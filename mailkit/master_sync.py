@@ -21,6 +21,7 @@ import argparse
 import csv
 import json
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -227,10 +228,9 @@ def sync_sent(args) -> int:
     cfg = load_config(args.config)
     manifest_path = Path(args.manifest) if args.manifest else \
         Path(cfg.get("paths", {}).get("workdir", "workbench")) / "send_manifest.jsonl"
-    wave = args.wave.strip().lower()
-    if wave not in {"mail1", "mail2", "mail3"}:
+    default_wave = args.wave.strip().lower() if args.wave else ""
+    if default_wave and default_wave not in {"mail1", "mail2", "mail3"}:
         raise SystemExit("[blocked] --wave 必须是 mail1|mail2|mail3")
-    n = int(wave[-1])
     master_path = Path(args.master)
     rows, fieldnames = read_master(master_path)
     by_key: dict[str, dict] = {}
@@ -242,14 +242,26 @@ def sync_sent(args) -> int:
     sent = [json.loads(l) for l in manifest_path.read_text(encoding="utf-8").splitlines()
             if l.strip()]
     changed = []
+    per_wave: dict[str, int] = {}
     for rec in sent:
         if rec.get("status") != "sent":
             continue
+        wave = (rec.get("wave") or default_wave).strip().lower()
+        if wave not in {"mail1", "mail2", "mail3"}:
+            print(f"[skip] {rec.get('to')} 无有效 wave（rec={rec.get('wave')!r} / "
+                  f"default={default_wave!r}）", file=sys.stderr)
+            continue
+        n = int(wave[-1])
         k = (rec.get("to") or "").strip().lower()
         row = by_key.get(k)
         if not row:
             continue
         mid = norm_id(rec.get("message_id", ""))
+        # 幂等：该 wave 已完整记过账的旧 manifest 行直接跳过
+        if (mid and (row.get(f"Mail{n}_Status", "") or "").strip().lower() == "sent"
+                and (row.get(f"Mail{n}_Sent_At", "") or "").strip()
+                and mid in (row.get("Outbound_Message_IDs", "") or "").lower()):
+            continue
         updates = {}
         if mid:
             outbound = row.get("Outbound_Message_IDs", "") or ""
@@ -263,23 +275,26 @@ def sync_sent(args) -> int:
             updates[f"Mail{n}_Sent_At"] = rec["sent_at"]
         if updates:
             row.update(updates)
-            changed.append({"email": k, **updates})
+            per_wave[wave] = per_wave.get(wave, 0) + 1
+            changed.append({"email": k, "wave": wave, **updates})
 
     run = now_ts()
     if changed and args.execute:
         backup = master_path.with_suffix(master_path.suffix + f".bak-{run.replace(':', '')}")
         backup.write_bytes(master_path.read_bytes())
         all_fields = ensure_fields(fieldnames, sorted({f for c in changed for f in c
-                                                       if f != "email"}))
+                                                       if f not in ("email", "wave")}))
         with open(master_path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.DictWriter(f, fieldnames=all_fields)
             w.writeheader()
             w.writerows(rows)
         print(f"[execute] 已写回 {master_path}（备份 {backup.name}）")
-    print(f"[sent] {wave} 回执命中 {len(changed)} 行"
+    wave_desc = " / ".join(f"{w}×{c}" for w, c in sorted(per_wave.items())) or "0"
+    print(f"[sent] 回执命中 {len(changed)} 行（{wave_desc}）"
           + ("" if args.execute else "（dry-run，加 --execute 写回）"))
     for c in changed:
-        print(f"  - {c['email']} :: {', '.join(k for k in c if k != 'email')}")
+        print(f"  - [{c['wave']}] {c['email']} :: "
+              f"{', '.join(k for k in c if k not in ('email', 'wave'))}")
     return 0
 
 
@@ -298,7 +313,8 @@ def main(argv=None) -> int:
     p2 = sub.add_parser("sent", help="send manifest → master（发件回执）")
     p2.add_argument("--config", default="config.toml")
     p2.add_argument("--master", required=True)
-    p2.add_argument("--wave", required=True)
+    p2.add_argument("--wave", default="",
+                    help="manifest 行无 wave 列时的缺省 wave（mail1|mail2|mail3）")
     p2.add_argument("--manifest", default="")
     p2.add_argument("--execute", action="store_true")
     p2.set_defaults(func=sync_sent)

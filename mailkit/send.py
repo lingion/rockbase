@@ -22,6 +22,7 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
+from email.utils import make_msgid
 from pathlib import Path
 
 from .config import is_placeholder, load_config, require_real
@@ -97,7 +98,8 @@ def plan(cfg: dict, rows: list[dict], manifest: list[dict]) -> tuple[list[dict],
         planned.append({"key": key, "to": to, "name": name,
                         "subject": subject, "body": body, "first_touch": first_touch,
                         "in_reply_to": in_reply_to, "references": references,
-                        "is_reply": is_reply})
+                        "is_reply": is_reply,
+                        "wave": (row.get("wave") or "").strip().lower()})
     return planned, skipped
 
 
@@ -117,6 +119,9 @@ def send_one(cfg: dict, item: dict) -> str:
     if item.get("references"):
         message["References"] = item["references"]
     message.set_content(item["body"])
+    # EmailMessage 不会自动生成 Message-ID；没有它，回信线程归因就断了
+    if not message.get("Message-ID"):
+        message["Message-ID"] = make_msgid(domain=from_addr.partition("@")[2])
 
     port = int(smtp_cfg.get("port", 587))
     if port == 465:
@@ -180,7 +185,8 @@ def main(argv=None) -> int:
             try:
                 mid = send_one(cfg, p)
                 rec = {"key": p["key"], "to": p["to"], "subject": p["subject"],
-                       "status": "sent", "sent_at": now_utc().isoformat(), "message_id": mid}
+                       "status": "sent", "sent_at": now_utc().isoformat(),
+                       "message_id": mid, "wave": p.get("wave", "")}
                 print(f"[sent] {p['to']} :: {p['subject']}")
             except Exception as e:  # noqa: BLE001
                 rec = {"key": p["key"], "to": p["to"], "subject": p["subject"],
