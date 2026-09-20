@@ -23,15 +23,16 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--run-date", required=True, help="Run date, e.g. 2026-05-12")
     parser.add_argument("--input-csv", default="", help="Optional S2 merged final CSV override.")
     parser.add_argument("--config", default="", help="Optional cold mail workflow config override.")
-    parser.add_argument("--model", default="gpt-5.4-mini", help="Codex model for semantic Mail1 fill.")
-    parser.add_argument("--batch-size", type=int, default=12, help="Rows per Codex batch.")
-    parser.add_argument("--max-workers", type=int, default=3, help="Concurrent Codex workers.")
+    parser.add_argument("--model", default="gpt-4o-mini", help="LLM model for semantic Mail1 fill.")
+    parser.add_argument("--api-key", default="", help="LLM API key. Falls back to OPENAI_API_KEY env in the fill script.")
+    parser.add_argument("--base-url", default="", help="OpenAI-compatible base URL for the fill script.")
+    parser.add_argument("--batch-size", type=int, default=12, help="Rows per LLM batch.")
+    parser.add_argument("--max-workers", type=int, default=3, help="Concurrent LLM workers.")
     parser.add_argument("--start-row", type=int, default=2, help="Start from this sheet row number.")
     parser.add_argument("--limit", type=int, default=None, help="Optional max rows to process.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing Mail1 fields.")
     parser.add_argument("--dry-run", action="store_true", help="Run audit only, without writing back CSV.")
-    parser.add_argument("--codex-bin", default="codex", help="Codex CLI binary path.")
-    parser.add_argument("--timeout-seconds", type=int, default=180, help="Per Codex batch timeout.")
+    parser.add_argument("--timeout-seconds", type=int, default=180, help="LLM client timeout seconds.")
     parser.add_argument(
         "--gmail-stage",
         choices=["none", "prepare", "sample", "bulk"],
@@ -245,13 +246,15 @@ def main() -> int:
         str(args.max_workers),
         "--start-row",
         str(args.start_row),
-        "--codex-bin",
-        args.codex_bin,
         "--audit-dir",
         str(audit_dir),
         "--timeout-seconds",
         str(args.timeout_seconds),
     ]
+    if args.api_key:
+        cmd.extend(["--api-key", args.api_key])
+    if args.base_url:
+        cmd.extend(["--base-url", args.base_url])
     if args.limit is not None:
         cmd.extend(["--limit", str(args.limit)])
     if args.overwrite:

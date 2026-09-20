@@ -5,13 +5,11 @@ import argparse
 import csv
 import json
 import re
-import subprocess
-import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 import sys
-from typing import Dict, Iterable, List, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 SCRIPT_DIR = Path(__file__).parent
 SHARED_DIR = SCRIPT_DIR.parent / "shared"
@@ -21,8 +19,18 @@ if str(SHARED_DIR) not in sys.path:
 
 from common import clean_recipient_value
 
+try:
+    # OpenAI SDK >=1 is the only LLM dependency; base_url may point at any
+    # OpenAI-compatible endpoint (OpenAI, Anthropic-via-proxy, internal gateway).
+    from openai import OpenAI
+except ImportError as exc:  # pragma: no cover - import guard
+    raise SystemExit(
+        "openai SDK is required. Install with `pip install 'openai>=1,<4'` or `pip install 'rockbase-skills[llm]'`."
+    ) from exc
 
-MODEL_DEFAULT = "gpt-5.4-mini"
+
+MODEL_DEFAULT = "gpt-4o-mini"
+DEFAULT_BASE_URL = "https://api.openai.com/v1"
 MAX_WORKERS_HARD_CAP = 3
 DEFAULT_BATCH_SIZE = 12
 DEFAULT_TIMEOUT_SECONDS = 180
@@ -131,6 +139,12 @@ def parse_json_payload(raw: str):
         sliced = text[start:]
         try:
             return json.loads(sliced)
+        except json.JSONDecodeError:
+            pass
+        try:
+            # Ignore trailing junk after the JSON value (e.g. a closing code fence).
+            parsed, _ = decoder.raw_decode(sliced)
+            return parsed
         except json.JSONDecodeError:
             cleaned_sliced = re.sub(r",(\s*[}\]])", r"\1", sliced)
             return json.loads(cleaned_sliced)
@@ -272,40 +286,42 @@ Rows:
 """
 
 
-def run_codex_batch(
+def build_llm_client(api_key: str, base_url: str, timeout_seconds: float):
+    """Create the OpenAI-compatible client. `base_url` decides the actual vendor."""
+    return OpenAI(api_key=api_key, base_url=base_url, timeout=timeout_seconds)
+
+
+def _strip_code_fence(text: str) -> str:
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if len(lines) >= 2:
+            # drop opening ``` / ```json and closing ```
+            return "\n".join(lines[1:-1]).strip()
+    return stripped
+
+
+def run_llm_batch(
     batch: Sequence[TargetRow],
-    cwd: Path,
+    client: Any,
     model: str,
-    codex_bin: str,
     workflow_config: Dict[str, object],
-    timeout_seconds: int,
+    temperature: float = 0.0,
 ) -> Dict[int, Dict[str, str]]:
     prompt = build_prompt(batch, workflow_config)
-    with tempfile.TemporaryDirectory(prefix="codex_mail1_fill_") as tmpdir:
-        output_path = Path(tmpdir) / "output.json"
-        cmd = [
-            codex_bin,
-            "exec",
-            "--ignore-user-config",
-            "--skip-git-repo-check",
-            "--sandbox",
-            "read-only",
-            "--model",
-            model,
-            "--output-last-message",
-            str(output_path),
-            "-C",
-            str(cwd),
-            "--",
-            prompt,
-        ]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds)
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"codex exec failed ({proc.returncode})\nSTDOUT:\n{proc.stdout[-4000:]}\nSTDERR:\n{proc.stderr[-4000:]}"
-            )
-        raw = output_path.read_text(encoding="utf-8").strip()
-        data = parse_json_payload(raw)
+    response = client.chat.completions.create(
+        model=model,
+        temperature=temperature,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a structured-data filler. Return JSON only, no prose, no markdown.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+    )
+    raw = _strip_code_fence(response.choices[0].message.content or "")
+    data = parse_json_payload(raw)
 
     if isinstance(data, list):
         data = {"rows": data}
@@ -320,6 +336,7 @@ def run_codex_batch(
             "Mail1_Variant": variant,
             "Mail1_Reason": normalize_brand_names(normalize_text(item["Mail1_Reason"])),
         }
+    validate_batch_result(batch, by_row_number, workflow_config)
     return by_row_number
 
 
@@ -427,21 +444,33 @@ def batch_rows(rows: Sequence[TargetRow], batch_size: int) -> List[List[TargetRo
     return [list(rows[i : i + batch_size]) for i in range(0, len(rows), batch_size)]
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Fill Gmail Mail1 outreach columns with Codex as the semantic engine.")
+def _build_argparser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Fill Gmail Mail1 outreach columns with an OpenAI-compatible LLM as the semantic engine.")
     parser.add_argument("--input", required=True, help="Source CSV path to update in place.")
     parser.add_argument("--config", default="", help="Optional workflow JSON config. If omitted, the built-in default config is used.")
-    parser.add_argument("--model", default=MODEL_DEFAULT, help=f"Codex model to use. Default: {MODEL_DEFAULT}")
-    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help=f"Rows per Codex call. Default: {DEFAULT_BATCH_SIZE}")
-    parser.add_argument("--max-workers", type=int, default=MAX_WORKERS_HARD_CAP, help=f"Concurrent Codex workers. Hard cap: {MAX_WORKERS_HARD_CAP}")
+    parser.add_argument("--model", default=MODEL_DEFAULT, help=f"LLM model name. Default: {MODEL_DEFAULT}")
+    parser.add_argument("--api-key", default="", help="LLM API key. Falls back to OPENAI_API_KEY env if omitted.")
+    parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help=f"OpenAI-compatible base URL. Default: {DEFAULT_BASE_URL}")
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help=f"Rows per LLM call. Default: {DEFAULT_BATCH_SIZE}")
+    parser.add_argument("--max-workers", type=int, default=MAX_WORKERS_HARD_CAP, help=f"Concurrent LLM workers. Hard cap: {MAX_WORKERS_HARD_CAP}")
     parser.add_argument("--start-row", type=int, default=2, help="Start from this sheet row number (header is row 1).")
     parser.add_argument("--limit", type=int, default=None, help="Optional max number of source rows to process.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite rows even if target columns already have values.")
-    parser.add_argument("--dry-run", action="store_true", help="Run Codex and write audit only, without writing back CSV.")
-    parser.add_argument("--codex-bin", default="codex", help="Codex CLI binary path.")
+    parser.add_argument("--dry-run", action="store_true", help="Run LLM and write audit only, without writing back CSV.")
     parser.add_argument("--audit-dir", default="", help="Optional directory for audit files. Defaults to input sibling or provided path.")
-    parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS, help=f"Per Codex batch timeout. Default: {DEFAULT_TIMEOUT_SECONDS}")
-    args = parser.parse_args()
+    parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS, help=f"LLM client timeout. Default: {DEFAULT_TIMEOUT_SECONDS}")
+    return parser
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = _build_argparser()
+    args = parser.parse_args(argv)
+
+    import os
+
+    api_key = args.api_key or os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        parser.error("--api-key or OPENAI_API_KEY env is required")
 
     max_workers = min(max(args.max_workers, 1), MAX_WORKERS_HARD_CAP)
     input_path = Path(args.input).expanduser()
@@ -450,6 +479,8 @@ def main() -> None:
     audit_dir = Path(args.audit_dir).expanduser() if args.audit_dir else cwd
     audit_dir.mkdir(parents=True, exist_ok=True)
     workflow_config = load_workflow_config(config_path)
+
+    client = build_llm_client(api_key, args.base_url, args.timeout_seconds)
 
     fieldnames, rows = read_csv(input_path)
     fieldnames = ensure_workflow_columns(fieldnames, rows)
@@ -461,7 +492,7 @@ def main() -> None:
             "selected_rows": 0,
             "written_rows": 0
         }, ensure_ascii=False, indent=2))
-        return
+        return 0
 
     batches = batch_rows(targets, max(1, args.batch_size))
     results_by_row: Dict[int, Dict[str, str]] = {}
@@ -470,21 +501,18 @@ def main() -> None:
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_map = {
             pool.submit(
-                run_codex_batch,
+                run_llm_batch,
                 batch,
-                cwd,
+                client,
                 args.model,
-                args.codex_bin,
                 workflow_config,
-                args.timeout_seconds,
             ): batch
             for batch in batches
         }
         for future in as_completed(future_map):
             batch = future_map[future]
             try:
-                result = future.result()
-                validate_batch_result(batch, result, workflow_config)
+                result = future.result()  # run_llm_batch already validated
                 results_by_row.update(result)
             except Exception as exc:
                 errors.append({
@@ -537,9 +565,11 @@ def main() -> None:
         "dry_run": args.dry_run,
         "written_rows": 0 if args.dry_run else len(targets),
         "audit_csv": str(audit_path),
+        "base_url": args.base_url,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main(sys.argv[1:]))
