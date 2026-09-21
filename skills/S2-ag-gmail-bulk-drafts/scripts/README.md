@@ -6,7 +6,7 @@ This directory is now split by workflow responsibility instead of mixing Gmail d
 
 - `gmail/`
   - Canonical Gmail draft pipeline scripts
-  - `fill_mail1_with_codex.py`
+  - `fill_mail1_with_codex.py` (OpenAI-compatible LLM; historical filename)
   - `prepare_jobs.py`
   - `sample_send.py`
   - `bulk_send.py`

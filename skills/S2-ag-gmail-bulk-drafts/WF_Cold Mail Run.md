@@ -39,7 +39,7 @@
 ## 2.1 Canonical Script
 
 - Gmail-native `Mail1` 生成入口：
-  - `scripts/gmail/fill_mail1_with_codex.py`
+  - `scripts/gmail/fill_mail1_with_codex.py`（历史文件名，实际通过部署配置的 OpenAI-compatible LLM 生成）
 - 默认机器配置：
   - `references/cold_mail_workflow_config.json`
 

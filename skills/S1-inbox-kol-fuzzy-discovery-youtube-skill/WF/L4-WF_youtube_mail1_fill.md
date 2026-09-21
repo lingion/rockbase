@@ -23,7 +23,7 @@ YouTube 侧统一入口：
 
 1. 定位 YouTube `S2 merged final`
 2. 先做物理备份
-3. 直接转调 Gmail skill 的 `scripts/gmail/fill_mail1_with_codex.py`
+3. 直接转调 Gmail skill 的 `scripts/gmail/fill_mail1_with_codex.py`（历史文件名，实际通过 `--api-key` / `--base-url` / `--model` 调用 OpenAI-compatible LLM）
 4. 可选接入 Gmail `prepare_jobs.py` 生成 manifest
 5. 可选接入 Gmail `sample_send.py` / `bulk_send.py` 创建草稿
 6. 把 audit / runlog 落到当天 `workbench/{YYYY-MM-DD}/YouTube/`

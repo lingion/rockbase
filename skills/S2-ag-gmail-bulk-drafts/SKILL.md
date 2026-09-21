@@ -182,14 +182,14 @@ ag-gmail-bulk-drafts/
 | 先跑 Cold DM 内容流程 | `WF_Cold DM Run.md` | 定义 X / DM 文案生成流程与 QC |
 | 查看 Cold Mail 文案资产 | `references/cold_mail_copybook.md` | 管理模板、variant、subject、固定语气 |
 | 查看 Cold DM 文案资产 | `references/cold_dm_copybook.md` | 管理模板、variant、CTA、固定语气 |
-| 生成 Mail1 字段 | `scripts/gmail/fill_mail1_with_codex.py` | 用 Codex 逐行生成 Greeting / Hook / Variant / Reason，并拼装正文 |
+| 生成 Mail1 字段 | `scripts/gmail/fill_mail1_with_codex.py` | 用 OpenAI-compatible LLM 逐批生成 Greeting / Hook / Variant / Reason，并拼装正文；文件名保留以兼容旧入口 |
 | 跑 manifest 和草稿 | `WF_Cold Mail Run.md` | 在 Mail run 内继续执行 draft、sample、bulk、回写 |
 | 从表生成 manifest | `scripts/gmail/prepare_jobs.py` | 先建标准任务清单 |
 | 先做样本草稿 | `scripts/gmail/sample_send.py` | 默认先 1 封，再 5 封 |
 | 跑全量草稿 | `scripts/gmail/bulk_send.py` | 只基于 manifest 执行 |
 | 自动发件循环 | `scripts/gmail/send_draft_jittered.py` | 随机批次 + 随机等待的发件窗口 |
 | 自动发件循环（推荐包装） | `scripts/gmail/send_mail1_auto_loop.py` | 固定默认批次/等待参数的入口 |
-| Heartbeat 单轮发送 | `scripts/gmail/send_mail1_heartbeat_round.py` | 适配 Codex heartbeat：每次唤醒只发一轮，批量和抖动都按基准值随机 |
+| Heartbeat 单轮发送 | `scripts/gmail/send_mail1_heartbeat_round.py` | 每次服务器调度唤醒只发一轮，批量和抖动都按基准值随机 |
 | 对账 | `scripts/gmail/reconcile_drafts.py` | 检查 missing / duplicate / unexpected，默认优先 `to-subject-bodyhash` |
 | 清重复草稿 | `scripts/gmail/dedupe_drafts.py` | 只删对账报告确认的重复项 |
 | 打开 X 手动 DM 批次 | `scripts/x/open_x_profiles_in_adspower.py` | 通过 AdsPower local API + CDP 打开指定 rows |
@@ -243,7 +243,7 @@ ag-gmail-bulk-drafts/
   - 固定 batch size
   - `per-email-min-seconds` / `per-email-max-seconds` 显式设置
 - heartbeat 定时发送：
-  - cadence 由 Codex automation 控制
+  - cadence 由服务器 cron/systemd 或其他部署编排控制
   - sender 只负责单轮
   - 秒级随机由 `send_mail1_heartbeat_round.py` 传给 `send_draft_jittered.py`
 

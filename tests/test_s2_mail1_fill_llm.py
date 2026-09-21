@@ -13,8 +13,11 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import subprocess
 import sys
+import threading
 from contextlib import redirect_stdout
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -280,3 +283,90 @@ def test_validation_rejects_unknown_variant():
             workflow_config=workflow_config,
             temperature=0,
         )
+
+
+def test_real_http_openai_sdk_round_trip():
+    """Cross-check the injected fake against the actual SDK HTTP wire contract."""
+    module = load_module()
+    row = next(make_rows(1))
+    target = module.TargetRow(sheet_row_number=2, row_index=0, data=row)
+    workflow_config = json.loads(CONFIG.read_text(encoding="utf-8"))
+    response_body = {
+        "id": "chatcmpl-local",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "gpt-4o-mini",
+        "choices": [{
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": json.dumps({
+                    "rows": [{
+                        "sheet_row_number": 2,
+                        "Mail1_Greeting_Name": "Channel 1",
+                        "Mail1_Hook": "Hook sentence with at least six words about AI tooling.",
+                        "Mail1_Variant": "A1_media_kit_soft",
+                        "Mail1_Reason": "brand channel, soft ask",
+                    }]
+                }),
+                "refusal": None,
+            },
+            "finish_reason": "stop",
+        }],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+    }
+    observed = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 - stdlib handler API
+            observed["path"] = self.path
+            observed["auth"] = self.headers.get("Authorization")
+            length = int(self.headers["Content-Length"])
+            observed["request"] = json.loads(self.rfile.read(length))
+            payload = json.dumps(response_body).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *_args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        client = module.build_llm_client("sk-local", f"http://127.0.0.1:{server.server_port}/v1", 10)
+        result = module.run_llm_batch(
+            batch=[target],
+            client=client,
+            model="gpt-4o-mini",
+            workflow_config=workflow_config,
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+
+    assert result[2]["Mail1_Variant"] == "A1_media_kit_soft"
+    assert observed["path"] == "/v1/chat/completions"
+    assert observed["auth"] == "Bearer sk-local"
+    assert observed["request"]["model"] == "gpt-4o-mini"
+    assert observed["request"]["temperature"] == 0
+
+
+def test_s1_wrapper_help_uses_s2_llm_flags():
+    """Cross-check the wrapper's CLI surface independently from its Python module."""
+    wrapper = ROOT / "skills/S1-inbox-kol-fuzzy-discovery-youtube-skill/src/youtube_kol_discovery/pipelines/run_s2_mail1_fill.py"
+    help_result = subprocess.run(
+        [sys.executable, str(wrapper), "--help"],
+        cwd=str(wrapper.parents[4]),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "--api-key" in help_result.stdout
+    assert "--base-url" in help_result.stdout
+    assert "--model" in help_result.stdout
+    assert "--codex-bin" not in help_result.stdout
