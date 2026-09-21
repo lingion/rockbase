@@ -20,4 +20,12 @@ cookies*.txt
 .DS_Store
 Thumbs.db
 .idea/
+
+# Rockbase console runtime data (never commit credentials or audit state)
+console/users.toml
+console/state/
+console/sessions.json
+console/approvals/
+console/audit.jsonl
+
 .vscode/
