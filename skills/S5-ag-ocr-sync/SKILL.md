@@ -105,8 +105,9 @@ description: 对 EasyKOL / Ticnote / 受众分析截图做 OCR，优先使用 Vi
 - 先运行 `scripts/ag_ocr_sync.py`
 - 默认流程：
 1. 先做图片级去重
-2. 优先使用 `Vision OCR`
-3. 同时允许 `tesseract` 作为字段级兜底
+2. 服务器推荐显式使用 `--ocr-engine llm`，直接调用部署侧 OpenAI-compatible 多模态模型
+3. 本机兼容路径优先使用 `Vision OCR`
+4. 同时允许 `tesseract` 作为字段级兜底
 3. 优先提取顶部 `handle / name / email`
 4. 对 EasyKOL / Ticnote 常见版式做区域解析，重点提取 `countries / gender / age`
 5. 用 `handle > email > name` 的顺序匹配表格行，并支持 `name-as-handle` 兜底
@@ -137,7 +138,9 @@ description: 对 EasyKOL / Ticnote / 受众分析截图做 OCR，优先使用 Vi
 
 常用参数：
 
-- `--ocr-engine auto|vision|tesseract`
+- `--ocr-engine auto|vision|tesseract|llm`
+- `--llm-api-key` / `OPENAI_API_KEY`
+- `--llm-base-url` / `--llm-model`
 - `--target-id @handle`
 - `--target-name "Channel Name"`
 - `--only-files /abs/path/a.png other.png`

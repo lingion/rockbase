@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 import hashlib
 import json
+import mimetypes
+import os
 import platform
 import re
 import shutil
@@ -16,6 +19,34 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 import cv2
+
+try:
+    # Only required by the `llm` OCR engine; vision/tesseract paths don't import it.
+    from openai import OpenAI
+except ImportError:  # pragma: no cover - optional extra
+    OpenAI = None
+
+
+LLM_VISION_MODEL_DEFAULT = "gpt-4o-mini"
+LLM_BASE_URL_DEFAULT = "https://api.openai.com/v1"
+
+LLM_VISION_PROMPT = """You read social-media profile screenshots and return structured audience data.
+
+Return JSON only, no prose, no markdown, matching exactly this schema:
+{
+  "handle": "@handle or empty string",
+  "author_name": "display name or empty string",
+  "email": "email address visible in the screenshot or empty string",
+  "countries": "top audience countries as 'Country PCT%' joined by ' / ' (max 4, most first) or empty string",
+  "gender": "男<PCT>%/女<PCT>% or empty string",
+  "age": "18-25 (PCT%)/25-45 (PCT%) or empty string",
+  "confidence": 0.0-1.0 self-assessed extraction confidence
+}
+
+Rules:
+- Transcribe only what is visible. Never guess or invent values.
+- Percentages must keep the % sign. Country names in Chinese when shown in Chinese.
+- If a field is not visible, return an empty string."""
 
 
 EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
@@ -226,12 +257,15 @@ class CandidateImage:
     visual_hash: str
 
 
-def parse_args() -> argparse.Namespace:
+def _build_argparser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="OCR screenshots and sync audience fields back to the master CSV.")
     parser.add_argument("--image-dir", required=True)
     parser.add_argument("--csv-path", required=True)
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--ocr-engine", choices=["auto", "vision", "tesseract"], default="auto")
+    parser.add_argument("--ocr-engine", choices=["auto", "vision", "tesseract", "llm"], default="auto")
+    parser.add_argument("--llm-api-key", default="", help="Vision LLM key; falls back to OPENAI_API_KEY.")
+    parser.add_argument("--llm-base-url", default=LLM_BASE_URL_DEFAULT, help="OpenAI-compatible vision endpoint.")
+    parser.add_argument("--llm-model", default=LLM_VISION_MODEL_DEFAULT, help="Vision-capable model name.")
     parser.add_argument("--target-id")
     parser.add_argument("--target-name")
     parser.add_argument("--partition-filter")
@@ -240,7 +274,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dedupe-images", action="store_true", default=True)
     parser.add_argument("--no-dedupe-images", dest="dedupe_images", action="store_false")
     parser.add_argument("--force-overwrite", action="store_true")
-    return parser.parse_args()
+    return parser
+
+
+def parse_args() -> argparse.Namespace:
+    return _build_argparser().parse_args()
 
 
 def ensure_backup(csv_path: Path) -> Path:
@@ -424,6 +462,66 @@ def run_vision_batch(image_dir: Path) -> dict[str, list[VisionItem]]:
         idx = end
         payloads[obj["image_path"]] = [VisionItem(**item) for item in obj["items"]]
     return payloads
+
+
+def build_llm_client(api_key: str, base_url: str, timeout_seconds: float = 60.0):
+    if OpenAI is None:
+        raise RuntimeError("openai SDK is required for --ocr-engine llm")
+    return OpenAI(api_key=api_key, base_url=base_url, timeout=timeout_seconds)
+
+
+def _llm_json_content(response) -> dict:
+    content = response.choices[0].message.content or ""
+    text = content.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        text = "\n".join(lines[1:-1]).strip()
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        start = min((pos for pos in (text.find("{"), text.find("[")) if pos >= 0), default=-1)
+        if start < 0:
+            raise ValueError("vision LLM returned no JSON object")
+        value = json.loads(text[start:])
+    if not isinstance(value, dict):
+        raise ValueError("vision LLM response must be a JSON object")
+    return value
+
+
+def run_llm_vision(image_path: Path, client, model: str) -> ScreenshotData:
+    mime = mimetypes.guess_type(image_path.name)[0] or "image/png"
+    encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
+    response = client.chat.completions.create(
+        model=model,
+        temperature=0,
+        messages=[
+            {"role": "system", "content": LLM_VISION_PROMPT},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Extract the visible profile and audience fields from this screenshot."},
+                    {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}},
+                ],
+            },
+        ],
+    )
+    payload = _llm_json_content(response)
+    confidence = payload.get("confidence", 0.0)
+    try:
+        confidence = max(0.0, min(1.0, float(confidence)))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    return ScreenshotData(
+        path=str(image_path),
+        handle=normalize_handle(str(payload.get("handle") or "")),
+        author_name=normalize_name(str(payload.get("author_name") or "")),
+        email=str(payload.get("email") or "").strip(),
+        countries=normalize_text(str(payload.get("countries") or "")),
+        gender=normalize_text(str(payload.get("gender") or "")),
+        age=normalize_text(str(payload.get("age") or "")),
+        raw_hits={"engine": "llm", "payload": payload},
+        confidence=round(confidence, 3),
+    )
 
 
 def ocr_file(path: Path) -> str:
@@ -1061,6 +1159,11 @@ def build_summary_markdown(
 
 def main() -> None:
     args = parse_args()
+    llm_api_key = ""
+    if args.ocr_engine == "llm":
+        llm_api_key = args.llm_api_key or os.environ.get("OPENAI_API_KEY", "")
+        if not llm_api_key:
+            raise SystemExit("--llm-api-key or OPENAI_API_KEY is required for --ocr-engine llm")
     image_dir = Path(args.image_dir)
     csv_path = Path(args.csv_path)
     images, duplicate_images = select_images(image_dir, args.only_files, args.dedupe_images)
@@ -1070,8 +1173,11 @@ def main() -> None:
     headers = list(rows[0].keys()) if rows else []
 
     vision_payloads: dict[str, list[VisionItem]] = {}
+    llm_client = None
     if args.ocr_engine in {"auto", "vision"}:
         vision_payloads = run_vision_batch(image_dir)
+    elif args.ocr_engine == "llm":
+        llm_client = build_llm_client(llm_api_key, args.llm_base_url)
 
     extracted: list[ScreenshotData] = []
     issues: list[dict] = []
@@ -1081,6 +1187,8 @@ def main() -> None:
 
     for image in images:
         data = ScreenshotData(path=str(image))
+        if llm_client is not None:
+            data = run_llm_vision(image, llm_client, args.llm_model)
         vision_items = vision_payloads.get(str(image))
         if vision_items:
             data = extract_from_vision(image, vision_items)
