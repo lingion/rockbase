@@ -50,6 +50,41 @@ class TestConsoleConfigOverrides:
         config = ConsoleConfig.from_env(env)
         assert config.session_ttl_seconds == 600
 
+    def test_env_overrides_runs_dir(self, tmp_path):
+        env = {
+            "ROCKBASE_CONSOLE_BASE_DIR": str(tmp_path),
+            "ROCKBASE_CONSOLE_RUNS_DIR": str(tmp_path / "runs"),
+        }
+        config = ConsoleConfig.from_env(env)
+        assert config.runs_dir == tmp_path / "runs"
+
+
+class TestConsoleConfigPathNormalization:
+    def test_relative_base_dir_resolved_again_cwd(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        config = ConsoleConfig.from_env({"ROCKBASE_CONSOLE_BASE_DIR": "relbase"})
+        assert config.users_file.is_absolute()
+        assert config.users_file == tmp_path / "relbase" / "users.toml"
+
+    def test_home_shorthand_expanded(self, monkeypatch):
+        monkeypatch.setenv("HOME", "/home/fakeuser")
+        config = ConsoleConfig.from_env({"ROCKBASE_CONSOLE_BASE_DIR": "~/.rockbase"})
+        assert str(config.users_file).startswith("/home/fakeuser/.rockbase/")
+
+    def test_relative_runs_dir_resolved(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        env = {
+            "ROCKBASE_CONSOLE_BASE_DIR": str(tmp_path / "b"),
+            "ROCKBASE_CONSOLE_RUNS_DIR": "runs",
+        }
+        config = ConsoleConfig.from_env(env)
+        assert config.runs_dir.is_absolute()
+        assert config.runs_dir == tmp_path / "runs"
+
+    def test_explicit_repo_root_resolved(self, tmp_path):
+        config = ConsoleConfig.from_env({"ROCKBASE_CONSOLE_REPO_ROOT": str(tmp_path)})
+        assert config.repo_root == tmp_path.resolve()
+
 
 class TestConsoleConfigValidation:
     def test_invalid_port_rejected(self):

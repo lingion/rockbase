@@ -64,14 +64,20 @@ class ConsoleConfig:
         if ttl <= 0:
             raise ValueError("ROCKBASE_CONSOLE_SESSION_TTL_SECONDS must be positive")
 
-        repo_root = Path(env.get("ROCKBASE_CONSOLE_REPO_ROOT", _resolve_repo_root()))
-        base = Path(env.get("ROCKBASE_CONSOLE_BASE_DIR", "/etc/rockbase/console"))
+        def _absolute(value: str) -> Path:
+            # expanduser + cwd join only; never resolve( ) symlinks, so a
+            # configured path stays literally where the operator typed it.
+            path = Path(value).expanduser()
+            return path if path.is_absolute() else Path.cwd() / path
+
+        repo_root = _absolute(env.get("ROCKBASE_CONSOLE_REPO_ROOT", str(_resolve_repo_root())))
+        base = _absolute(env.get("ROCKBASE_CONSOLE_BASE_DIR", "/etc/rockbase/console"))
 
         cookie_secure_raw = env.get("ROCKBASE_CONSOLE_COOKIE_SECURE", "").lower()
         cookie_secure = cookie_secure_raw in {"1", "true", "yes"}
 
         runs_dir_raw = env.get("ROCKBASE_CONSOLE_RUNS_DIR")
-        runs_dir = Path(runs_dir_raw) if runs_dir_raw else base / "state"
+        runs_dir = _absolute(runs_dir_raw) if runs_dir_raw else base / "state"
 
         return cls(
             host=host,
