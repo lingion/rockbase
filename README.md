@@ -145,6 +145,21 @@ python3 -m mailkit.master_sync replies --config config.toml --master /srv/rockba
 
 Read [`mailkit/README.md`](mailkit/README.md) for SMTP, receiver, Postfix, rate limits, and the local send-to-receive rehearsal.
 
+### Phase 2: resumable mail loop
+
+The first server orchestrator slice starts from an already generated Mail1 CSV and chains the existing mailkit commands. It persists stage state atomically, skips completed stages only when their declared artifacts still exist, and records failures without running later stages.
+
+```bash
+python -m scripts.run_mail_loop \
+  --batch-csv /srv/rockbase/data/mail1.csv \
+  --config /srv/rockbase/mailkit/config.toml \
+  --master /srv/rockbase/data/master.csv \
+  --state /srv/rockbase/workbench/mail-loop.json \
+  --fetch-out /srv/rockbase/workbench/replies_2026-09-21
+```
+
+This defaults to mailkit send dry-run and master sync dry-run. Add `--execute-send` only for an approved SMTP batch; add `--execute-sync` only after reviewing the send/reply previews. The two flags are independent. Credentials are read by mailkit configuration/environment and are redacted from the orchestrator state file.
+
 ### S5: direct multimodal OCR
 
 ```bash
@@ -358,6 +373,21 @@ python3 -m mailkit.master_sync replies --config config.toml --master /srv/rockba
 
 SMTP、receiver、Postfix、限速和本机彩排看 [`mailkit/README.md`](mailkit/README.md)。
 
+### Phase 2: 可恢复邮件编排
+
+第一版服务器编排从已经生成的 Mail1 CSV 开始，串起现有 mailkit 命令。它原子持久化阶段状态；只有声明的产物仍存在时才跳过已完成阶段；阶段失败会记录并停止后续阶段。
+
+```bash
+python -m scripts.run_mail_loop \
+  --batch-csv /srv/rockbase/data/mail1.csv \
+  --config /srv/rockbase/mailkit/config.toml \
+  --master /srv/rockbase/data/master.csv \
+  --state /srv/rockbase/workbench/mail-loop.json \
+  --fetch-out /srv/rockbase/workbench/replies_2026-09-21
+```
+
+默认是 mailkit 发信 dry-run 和主表同步 dry-run。只对已批准批次加 `--execute-send`；检查发件/回件预览后，才加 `--execute-sync`。两个开关相互独立。凭据由 mailkit 配置/环境读取，不会写入编排器状态文件。
+
 ### S5 直接多模态 OCR
 
 ```bash
@@ -413,8 +443,8 @@ cd mailkit && python3 tests/test_smoke.py
 
 当前 main 还没有：
 
-- 把 S1 → S2 → mailkit → S3 → S4/S5 串起来的统一服务器编排器；
-- 编排器的重试、持久化任务状态和告警；
+- 从 S1 发现/补全开始、覆盖 S2 生成和 S4/S5 的全链路编排；当前 runner 从已生成的 Mail1 CSV 开始；
+- 编排器的服务级告警和部署级重试策略；阶段失败状态与超时记录已经落地；
 - 使用公司真实 API key、SMTP、receiver 和主表数据做的验收；
 - 所有历史脚本的 macOS 路径清理。
 

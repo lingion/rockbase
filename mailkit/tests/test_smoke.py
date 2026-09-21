@@ -192,7 +192,9 @@ def main():
         capture_output=True, text=True, cwd=ROOT)
     check("fetch exit 0", p.returncode == 0)
     files = list((tmp / "wb").glob("replies_*.json"))
+    csv_files = list((tmp / "wb").glob("replies_*.csv"))
     check("replies json written", bool(files))
+    check("replies csv written", bool(csv_files))
     rows = json.loads(files[0].read_text(encoding="utf-8"))
     check("reply captured", len(rows) >= 1
           and rows[0]["reply_from"] == "kol@example.invalid")

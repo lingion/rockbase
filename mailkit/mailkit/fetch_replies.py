@@ -75,11 +75,14 @@ def main(argv=None) -> int:
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     prefix = Path(args.out) if args.out else workdir / f"replies_{stamp}"
     csv_path, json_path = prefix.with_suffix(".csv"), prefix.with_suffix(".json")
-    if rows:
-        with open(csv_path, "w", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-            w.writeheader()
-            w.writerows(rows)
+    # 始终落 CSV（即使零新回复），让下游 master_sync 的 --from-csv
+    # 在「今天没有回信」这条正常路径上仍有稳定输入。
+    reply_fields = ["reply_from", "reply_to", "subject", "body", "received_at",
+                    "external_id", "in_reply_to", "references"]
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=reply_fields)
+        w.writeheader()
+        w.writerows(rows)
     json_path.write_text(json.dumps(rows, ensure_ascii=False, indent=2),
                          encoding="utf-8")
     print(f"[fetch] {len(rows)} 条新回复 → {csv_path} / {json_path}")
