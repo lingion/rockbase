@@ -1,0 +1,7 @@
+[Unit]
+Description=Check Rockbase Phase 2 pipeline health
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/rockbase
+ExecStart=/srv/rockbase/.venv/bin/python -m scripts.rockbase_health --state /srv/rockbase/workbench/phase2-current.json

@@ -215,9 +215,9 @@ The tests use fake data and local loopback HTTP servers. They prove request shap
 
 The current orchestrator covers the server-side S2 → mailkit → S3 mail loop, with optional S1 enrichment and S5 OCR stages. The following work remains outside the current merged code:
 
-- service-level alerts and a host-specific secret-manager integration;
+- vendor-specific notification delivery and a host-specific secret-manager integration; the repository now exposes health JSON and exit codes for the host supervisor;
 - real-account acceptance with the company's API keys, SMTP, receiver, and master data;
-- migration of every historical script that still assumes a local macOS path.
+- migration of the remaining historical `${ROCKBASE_HOME}`, CWD, and `PYTHONPATH` assumptions; run `python -m scripts.audit_server_paths .` for the current inventory.
 
 ## Documentation
 

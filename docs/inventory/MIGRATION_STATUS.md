@@ -11,11 +11,13 @@
 
 ## 本次明确未完成
 
-- 未把 17 个 Skill 重写为统一 CLI。
-- 未清零所有历史 `${ROCKBASE_HOME}`、`PYTHONPATH` 和 CWD 假设。
+- 未把 17 个 Skill 重写为统一 CLI；Phase 2/3 编排覆盖的是服务器主路径，不替代所有历史入口。
+- 未清零所有历史 `${ROCKBASE_HOME}`、`PYTHONPATH` 和 CWD 假设；可用 `python -m scripts.audit_server_paths .` 重复盘点。
 - 未建立全量机器可读 registry、capability 治理、写入二次确认平台和跨系统 CI。
 - 未使用真实 Gmail、Feishu、社媒、数据服务或生产主表做端到端验收。
 - 未包含账号、Token、Cookie、浏览器 Profile、历史邮件或真实业务数据。
+
+Phase 3 已补充：编排状态健康检查、systemd health timer、源码路径审计和离线验收矩阵。
 
 ## 接收方建议顺序
 
