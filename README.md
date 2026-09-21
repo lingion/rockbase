@@ -213,10 +213,9 @@ cd mailkit && python3 tests/test_smoke.py
 
 The tests use fake data and local loopback HTTP servers. They prove request shapes, parsing, preview/write boundaries, and cross-script wiring. They do not prove that a deployment account has permission, quota, deliverability, or access to a specific third-party API.
 
-The following work remains outside the current merged code:
+The current orchestrator covers the server-side S2 → mailkit → S3 mail loop, with optional S1 enrichment and S5 OCR stages. The following work remains outside the current merged code:
 
-- one server orchestrator for S1 → S2 → mailkit → S3 → S4/S5;
-- retries, persistent job state, and service-level alerts around that orchestrator;
+- service-level alerts and a host-specific secret-manager integration;
 - real-account acceptance with the company's API keys, SMTP, receiver, and master data;
 - migration of every historical script that still assumes a local macOS path.
 

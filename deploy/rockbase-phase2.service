@@ -1,0 +1,10 @@
+[Unit]
+Description=Rockbase Phase 2 pipeline
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/rockbase
+EnvironmentFile=/etc/rockbase/phase2.env
+ExecStart=/bin/sh -c '/srv/rockbase/.venv/bin/python -m scripts.run_full_pipeline --csv /srv/rockbase/data/master.csv --config /srv/rockbase/mailkit/config.toml --state /srv/rockbase/workbench/phase2-current.json --fetch-out /srv/rockbase/workbench/replies-current --date "$ROCKBASE_RUN_DATE" --retries 1

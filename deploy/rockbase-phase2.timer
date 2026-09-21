@@ -1,0 +1,9 @@
+[Unit]
+Description=Run Rockbase Phase 2 pipeline daily
+
+[Timer]
+OnCalendar=*-*-* 06:17:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

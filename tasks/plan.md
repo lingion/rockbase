@@ -14,32 +14,32 @@ Add a thin, resumable command-line orchestrator that runs the existing Rockbase 
 ## Task List
 
 ### Phase 2A: Runner foundation
-- [ ] Task 1: Add state-file model and atomic state persistence.
-- [ ] Task 2: Add command execution wrapper with captured stdout/stderr, timeout, and stage failure records.
-- [ ] Task 3: Add `--plan`/dry-run mode that prints the ordered stages without running external writes.
+- [x] Task 1: Add state-file model and atomic state persistence.
+- [x] Task 2: Add command execution wrapper with captured stdout/stderr, timeout, retry, and stage failure records.
+- [x] Task 3: Add `--plan`/dry-run mode that prints the ordered stages without running external writes.
 
 ### Checkpoint: Foundation
-- [ ] Unit tests cover fresh state, atomic writes, resume after completed stage, and failed-stage stop.
-- [ ] Existing full suite remains green.
+- [x] Unit tests cover fresh state, atomic writes, resume after completed stage, retry, and failed-stage stop.
+- [x] Existing full suite remains green.
 
 ### Phase 2B: First vertical pipeline
-- [ ] Task 4: Implement S2 Mail1 generation stage and artifact discovery.
-- [ ] Task 5: Implement mailkit send stage with dry-run default and explicit `--execute-send`.
-- [ ] Task 6: Implement reply fetch and master sync stages with explicit `--execute-sync`.
+- [x] Task 4: Implement S2 Mail1 generation stage and artifact discovery.
+- [x] Task 5: Implement mailkit send stage with dry-run default and explicit `--execute-send`.
+- [x] Task 6: Implement reply fetch and master sync stages with explicit `--execute-sync`.
 
 ### Checkpoint: Mail loop
-- [ ] Local mailkit rehearsal proves plan -> draft/send dry-run -> fetch -> sync command ordering.
-- [ ] A rerun does not repeat completed stages or send without the execution flag.
+- [x] Local mailkit rehearsal proves plan -> draft/send dry-run -> fetch -> sync command ordering.
+- [x] A rerun does not repeat completed stages or send without the execution flag.
 
 ### Phase 2C: S1/S5 integration and operations
-- [ ] Task 7: Add optional S1 export/apply and S5 OCR stages behind explicit inputs.
-- [ ] Task 8: Add structured run summary and non-zero exit behavior for failed stages.
-- [ ] Task 9: Add cron/systemd deployment example and operator recovery notes.
+- [x] Task 7: Add optional S1 export/apply and S5 OCR stages behind explicit inputs.
+- [x] Task 8: Add structured run summary, retry, and non-zero exit behavior for failed stages.
+- [x] Task 9: Add cron/systemd deployment example and operator recovery notes.
 
 ### Checkpoint: Complete
-- [ ] Full offline suite and local end-to-end rehearsal pass.
-- [ ] Dry-run and resume behavior are documented with a clean example.
-- [ ] No production credentials or data are required by tests.
+- [x] Full offline suite and local end-to-end rehearsal pass.
+- [x] Dry-run, retry, and resume behavior are documented with a clean example.
+- [x] No production credentials or data are required by tests.
 
 ## Risks and Mitigations
 | Risk | Impact | Mitigation |

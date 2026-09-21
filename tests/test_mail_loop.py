@@ -27,6 +27,7 @@ def test_mail_loop_orders_send_fetch_then_two_syncs(tmp_path):
     assert "--execute" not in stages[0].command
     assert "--execute" not in stages[2].command
     assert "--execute" not in stages[3].command
+    assert stages[2].command[stages[2].command.index("--wave") + 1] == "mail1"
 
 
 def test_mail_loop_execution_flags_are_independent(tmp_path):

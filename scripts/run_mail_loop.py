@@ -35,7 +35,7 @@ def build_mail_loop_stages(
         send_args.append("--execute")
 
     sent_sync_args = ["sent", "--config", config, "--master", master,
-                      "--manifest", manifest]
+                      "--wave", "mail1", "--manifest", manifest]
     replies_sync_args = ["replies", "--config", config, "--master", master,
                          "--from-csv", replies_csv]
     if execute_sync:
@@ -43,7 +43,9 @@ def build_mail_loop_stages(
         replies_sync_args.append("--execute")
 
     return [
-        Stage("mailkit_send", _module_command("mailkit.mailkit.send", *send_args)),
+        Stage("mailkit_send", _module_command("mailkit.mailkit.send", *send_args),
+              artifacts=(manifest,) if execute_send else ()),
+
         Stage("fetch_replies", _module_command("mailkit.mailkit.fetch_replies", "--config", config,
                                                 "--out", fetch_out), artifacts=(fetch_out.with_suffix(".json"),)),
         Stage("master_sync_sent", _module_command("mailkit.mailkit.master_sync", *sent_sync_args)),
@@ -62,6 +64,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         help="allow SMTP send; default is mailkit dry-run")
     parser.add_argument("--execute-sync", action="store_true",
                         help="allow master CSV write-back; default is dry-run")
+    parser.add_argument("--retries", type=int, default=0,
+                        help="extra attempts per stage on failure (default 0)")
+    parser.add_argument("--plan", action="store_true",
+                        help="print stage commands without executing them")
     args = parser.parse_args(argv)
     stages = build_mail_loop_stages(
         batch_csv=args.batch_csv,
@@ -72,7 +78,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         execute_send=args.execute_send,
         execute_sync=args.execute_sync,
     )
-    return run_pipeline(stages, state_path=args.state)
+    return run_pipeline(stages, state_path=args.state, plan_only=args.plan, retries=args.retries)
 
 
 if __name__ == "__main__":

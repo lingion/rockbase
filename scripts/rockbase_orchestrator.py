@@ -45,8 +45,29 @@ def _load_state(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _resolve_command(command: Sequence[str]) -> list[str]:
+    resolved: list[str] = []
+    for item in command:
+        path = Path(item)
+        if any(char in item for char in "*?["):
+            matches = sorted(path.parent.glob(path.name))
+            if not matches:
+                resolved.append(item)
+            else:
+                resolved.append(str(matches[-1]))
+        else:
+            resolved.append(item)
+    return resolved
+
+
+def _artifact_exists(path: Path) -> bool:
+    if any(char in str(path) for char in "*?["):
+        return bool(path.parent.glob(path.name))
+    return path.exists()
+
+
 def _artifacts_exist(stage: Stage) -> bool:
-    return all(path.exists() for path in stage.artifacts)
+    return all(_artifact_exists(path) for path in stage.artifacts)
 
 
 def _safe_command(command: Sequence[str]) -> list[str]:
@@ -66,16 +87,34 @@ def _safe_command(command: Sequence[str]) -> list[str]:
     return safe
 
 
+def _safe_output(text: str, command: Sequence[str]) -> str:
+    """Remove values paired with credential flags from captured output."""
+    redacted = text or ""
+    secret_flags = {"--api-key", "--llm-api-key", "--access-token", "--token"}
+    for index, item in enumerate(command[:-1]):
+        if item in secret_flags:
+            redacted = redacted.replace(command[index + 1], "REDACTED")
+    return redacted[-4000:]
+
+
+def _print_summary(state: dict) -> None:
+    print(json.dumps({"version": state.get("version", 1), "stages": state.get("stages", {})},
+                     ensure_ascii=False, sort_keys=True))
+
+
 def run_pipeline(
     stages: Sequence[Stage],
     *,
     state_path: Path,
     plan_only: bool = False,
+    retries: int = 0,
 ) -> int:
     """Run stages in order, resuming only valid completed stages."""
+    if retries < 0:
+        raise ValueError("retries must be non-negative")
     if plan_only:
         for stage in stages:
-            print(f"[plan] {stage.name}: {' '.join(stage.command)}")
+            print(f"[plan] {stage.name}: {' '.join(_safe_command(stage.command))}")
         return 0
 
     state = _load_state(state_path)
@@ -91,44 +130,58 @@ def run_pipeline(
         if record.get("status") == "completed":
             record["status"] = "pending"
 
-        record.update({"status": "running", "started_at": _now(), "command": _safe_command(stage.command)})
+        record.update({"status": "running", "started_at": _now(),
+                       "command": _safe_command(stage.command),
+                       "attempts": 0})
         _save_state(state_path, state)
-        print(f"[run] {stage.name}")
-        try:
-            completed = subprocess.run(
-                list(stage.command),
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=stage.timeout_seconds,
-            )
-        except subprocess.TimeoutExpired as exc:
+        final_code = 1
+        for attempt in range(1, retries + 2):
+            record["attempts"] = attempt
+            print(f"[run] {stage.name} (attempt {attempt}/{retries + 1})")
+            try:
+                completed = subprocess.run(
+                    _resolve_command(stage.command),
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=stage.timeout_seconds,
+                )
+            except subprocess.TimeoutExpired as exc:
+                record.update({
+                    "status": "failed",
+                    "finished_at": _now(),
+                    "returncode": None,
+                    "error": f"timeout after {stage.timeout_seconds}s",
+                    "stdout": _safe_output(exc.stdout or "", stage.command),
+                    "stderr": _safe_output(exc.stderr or "", stage.command),
+                })
+                _save_state(state_path, state)
+                _print_summary(state)
+                return 124
+
+            final_code = completed.returncode
             record.update({
-                "status": "failed",
+                "status": "completed" if final_code == 0 else "failed",
                 "finished_at": _now(),
-                "returncode": None,
-                "error": f"timeout after {stage.timeout_seconds}s",
-                "stdout": (exc.stdout or "")[-4000:],
-                "stderr": (exc.stderr or "")[-4000:],
+                "returncode": final_code,
+                "stdout": _safe_output(completed.stdout, stage.command),
+                "stderr": _safe_output(completed.stderr, stage.command),
+                "artifacts": [str(path) for path in stage.artifacts],
             })
             _save_state(state_path, state)
-            return 124
-
-        record.update({
-            "status": "completed" if completed.returncode == 0 else "failed",
-            "finished_at": _now(),
-            "returncode": completed.returncode,
-            "stdout": completed.stdout[-4000:],
-            "stderr": completed.stderr[-4000:],
-            "artifacts": [str(path) for path in stage.artifacts],
-        })
-        _save_state(state_path, state)
-        if completed.returncode != 0:
-            return completed.returncode
-        if not _artifacts_exist(stage):
-            record.update({"status": "failed", "error": "declared artifact missing after command"})
-            _save_state(state_path, state)
-            return 1
+            if final_code == 0:
+                if not _artifacts_exist(stage):
+                    record.update({"status": "failed", "error": "declared artifact missing after command"})
+                    final_code = 1
+                else:
+                    break
+            if attempt <= retries:
+                record["status"] = "retrying"
+                _save_state(state_path, state)
+        if final_code != 0:
+            _print_summary(state)
+            return final_code
+    _print_summary(state)
     return 0
 
 
