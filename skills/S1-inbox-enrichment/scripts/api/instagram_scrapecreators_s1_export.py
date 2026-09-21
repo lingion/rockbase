@@ -27,7 +27,7 @@ def load_api_env() -> Optional[str]:
     return None
 
 
-def parse_args() -> argparse.Namespace:
+def _build_argparser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Export Instagram profile data from ScrapeCreators API into workbench JSON.")
     parser.add_argument("--csv", required=True, help="Target S1 CSV path")
     parser.add_argument("--rows", default="", help="Comma-separated physical row numbers to fetch")
@@ -36,7 +36,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prefix", default="instagram_scrapecreators_batch", help="Output filename prefix")
     parser.add_argument("--delay-seconds", type=float, default=0.35, help="Delay between API requests")
     parser.add_argument("--timeout-seconds", type=float, default=20.0, help="Per-request timeout")
-    return parser.parse_args()
+    parser.add_argument("--api-key", default="", help="ScrapeCreators API key. Overrides SCRAPECREATORS_API_KEY env.")
+    return parser
+
+
+def parse_args() -> argparse.Namespace:
+    return _build_argparser().parse_args()
 
 
 def workbench_root(csv_path: Path, date_str: str) -> Path:
@@ -122,7 +127,7 @@ def is_usable_payload(http_status: int, payload: object) -> bool:
 def main() -> None:
     args = parse_args()
     env_source = load_api_env()
-    api_key = os.getenv("SCRAPECREATORS_API_KEY")
+    api_key = args.api_key or os.getenv("SCRAPECREATORS_API_KEY")
     if not api_key:
         raise RuntimeError(f"SCRAPECREATORS_API_KEY 未找到，env_source={env_source}")
 
