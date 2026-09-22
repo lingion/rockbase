@@ -48,6 +48,9 @@ def build_full_pipeline_stages(
     s5_write: bool = False,
     execute_send: bool = False,
     execute_sync: bool = False,
+    pause_file: Path | None = None,
+    approval_files: dict[str, Path] | None = None,
+    console_run: bool = False,
 ) -> list[Stage]:
     if platform != "youtube":
         raise ValueError("full pipeline currently supports only youtube S2 generation")
@@ -118,9 +121,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--s5-write", action="store_true")
     parser.add_argument("--execute-send", action="store_true")
     parser.add_argument("--execute-sync", action="store_true")
+    parser.add_argument("--console-run", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--console-pause-file", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--console-send-approval", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--console-sync-approval", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--retries", type=int, default=0)
     parser.add_argument("--plan", action="store_true")
     args = parser.parse_args(argv)
+    approval_files = {}
+    if args.console_send_approval:
+        approval_files["send"] = args.console_send_approval
+    if args.console_sync_approval:
+        approval_files["sync"] = args.console_sync_approval
     stages = build_full_pipeline_stages(
         csv_path=args.csv, config=args.config, state_path=args.state,
         fetch_out=args.fetch_out, date=args.date, platform=args.platform,
@@ -128,8 +140,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         s2_write=args.s2_write, with_s5=args.with_s5, image_dir=args.image_dir, s5_engine=args.s5_engine,
         s5_write=args.s5_write, execute_send=args.execute_send,
         execute_sync=args.execute_sync,
+        pause_file=args.console_pause_file, approval_files=approval_files,
+        console_run=args.console_run,
     )
-    return run_pipeline(stages, state_path=args.state, plan_only=args.plan, retries=args.retries)
+    return run_pipeline(stages, state_path=args.state, plan_only=args.plan, retries=args.retries,
+                        pause_file=args.console_pause_file, approval_files=approval_files,
+                        console_run=args.console_run)
 
 
 if __name__ == "__main__":
