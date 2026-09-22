@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -104,10 +105,14 @@ def build_full_pipeline_stages(
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--csv", type=Path, required=True)
-    parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--csv", type=Path, default=None,
+                        help="master CSV; defaults to $ROCKBASE_MASTER_CSV")
+    parser.add_argument("--config", type=Path, default=None,
+                        help="mailkit config; defaults to $ROCKBASE_MAILKIT_CONFIG")
     parser.add_argument("--state", type=Path, required=True)
-    parser.add_argument("--fetch-out", type=Path, required=True)
+    parser.add_argument("--fetch-out", type=Path, default=None,
+                        help="reply fetch output; defaults to $ROCKBASE_PIPELINE_FETCH_OUT "
+                             "or <cwd>/workbench/replies-current")
     parser.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"))
     parser.add_argument("--platform", choices=["youtube", "instagram", "tiktok"], default="youtube")
     parser.add_argument("--with-s1", action="store_true")
@@ -122,6 +127,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--execute-send", action="store_true")
     parser.add_argument("--execute-sync", action="store_true")
     parser.add_argument("--console-run", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--run-id", default=None,
+                        help="stable run identifier recorded in the state file "
+                             "(the console workbench passes the id it allocated)")
     parser.add_argument("--console-pause-file", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--console-send-approval", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--console-sync-approval", type=Path, help=argparse.SUPPRESS)
@@ -133,9 +141,46 @@ def main(argv: Sequence[str] | None = None) -> int:
         approval_files["send"] = args.console_send_approval
     if args.console_sync_approval:
         approval_files["sync"] = args.console_sync_approval
+
+    def _resolve(value: Path | None, env_name: str, flag: str) -> Path:
+        """Resolve a required input: flag first, then env, else fail clearly."""
+        if value is not None:
+            path = value
+        else:
+            env_value = os.environ.get(env_name)
+            if not env_value:
+                raise SystemExit(
+                    f"error: {flag} is required (pass --{flag.lstrip('-')} or set ${env_name})")
+            path = Path(env_value)
+        if not path.exists():
+            raise SystemExit(f"error: {flag} path not found: {path}")
+        return path
+
+    csv_path = _resolve(args.csv, "ROCKBASE_MASTER_CSV", "--csv")
+    config_path = _resolve(args.config, "ROCKBASE_MAILKIT_CONFIG", "--config")
+
+    if args.fetch_out is not None:
+        fetch_out = args.fetch_out
+    else:
+        fetch_env = os.environ.get("ROCKBASE_PIPELINE_FETCH_OUT")
+        fetch_out = Path(fetch_env) if fetch_env else Path.cwd() / "workbench" / "replies-current"
+
+    # S1/S2 stage scripts locate the business project root from the process
+    # cwd and require workbench/ next to the master CSV. Anchor every input
+    # absolutely, then run from the CSV directory so console-spawned and
+    # entrypoint-spawned runs behave identically.
+    csv_path = csv_path.resolve()
+    config_path = config_path.resolve()
+    args.state = args.state.resolve()
+    if not fetch_out.is_absolute():
+        fetch_out = (Path.cwd() / fetch_out).resolve()
+    os.chdir(csv_path.parent)
+    if not args.plan:
+        (csv_path.parent / "workbench").mkdir(exist_ok=True)
+
     stages = build_full_pipeline_stages(
-        csv_path=args.csv, config=args.config, state_path=args.state,
-        fetch_out=args.fetch_out, date=args.date, platform=args.platform,
+        csv_path=csv_path, config=config_path, state_path=args.state,
+        fetch_out=fetch_out, date=args.date, platform=args.platform,
         s1_rows=args.s1_rows, with_s1=args.with_s1, s1_apply=args.s1_apply,
         s2_write=args.s2_write, with_s5=args.with_s5, image_dir=args.image_dir, s5_engine=args.s5_engine,
         s5_write=args.s5_write, execute_send=args.execute_send,
@@ -145,7 +190,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     return run_pipeline(stages, state_path=args.state, plan_only=args.plan, retries=args.retries,
                         pause_file=args.console_pause_file, approval_files=approval_files,
-                        console_run=args.console_run)
+                        console_run=args.console_run,
+                        run_id=args.run_id or os.environ.get("ROCKBASE_RUN_ID"))
 
 
 if __name__ == "__main__":

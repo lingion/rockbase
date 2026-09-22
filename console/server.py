@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import secrets
+import sys
 import uuid
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -222,7 +223,7 @@ def main() -> int:
     manager = RunManager(repo_root=config.repo_root, runs=RunRepository(config.runs_dir),
                          approvals=ApprovalStore(config.approval_dir),
                          audit=AuditLog(config.audit_file),
-                         runner=["python3", "-m", "scripts.run_full_pipeline"])
+                         runner=[sys.executable, "-m", "scripts.run_full_pipeline"])
     server = make_server(config=config, run_manager=manager,
                          sessions=SessionStore(config.session_file,
                                                ttl_seconds=config.session_ttl_seconds,

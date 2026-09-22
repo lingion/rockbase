@@ -1,28 +1,124 @@
 services:
+  # The control plane and all business stages use the same full-source image.
   console:
     build:
       context: .
       dockerfile: Dockerfile
-    image: rockbase-console:local
+    image: rockbase:local
+    command: ["console"]
     restart: unless-stopped
     ports:
       - "127.0.0.1:8790:8790"
     environment:
+      ROCKBASE_SERVICE: console
       ROCKBASE_CONSOLE_HOST: "0.0.0.0"
       ROCKBASE_CONSOLE_PORT: "8790"
       ROCKBASE_CONSOLE_ALLOW_REMOTE: "1"
       ROCKBASE_CONSOLE_BASE_DIR: /var/lib/rockbase/console
       ROCKBASE_CONSOLE_REPO_ROOT: /opt/rockbase
+      ROCKBASE_CONSOLE_RUNS_DIR: /var/lib/rockbase/runs
       ROCKBASE_CONSOLE_SESSION_TTL_SECONDS: "28800"
+      ROCKBASE_MASTER_CSV: /var/lib/rockbase/data/master.csv
+      ROCKBASE_MAILKIT_CONFIG: /var/lib/rockbase/data/mailkit.toml
+      ROCKBASE_PIPELINE_FETCH_OUT: /var/lib/rockbase/data/workbench/replies-current
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/rockbase", "health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     volumes:
       - rockbase-console-state:/var/lib/rockbase/console
+      - rockbase-runs:/var/lib/rockbase/runs
+      - rockbase-data:/var/lib/rockbase/data
+      - rockbase-workbench:/var/lib/rockbase/workbench
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=16m
     security_opt:
       - no-new-privileges:true
-    cap_drop:
-      - ALL
+    cap_drop: [ALL]
+
+  receiver:
+    image: rockbase:local
+    command: ["receiver"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8788:8788"
+    environment:
+      ROCKBASE_SERVICE: receiver
+      MAILKIT_DB_PATH: /var/lib/rockbase/mailkit/mailkit.db
+      MAILKIT_RECEIVER_HOST: "0.0.0.0"
+      MAILKIT_RECEIVER_PORT: "8788"
+      MAILKIT_RECEIVER_API_KEY: "${MAILKIT_RECEIVER_API_KEY:-}"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8788/api/health', timeout=4)"]
+      interval: 30s
+      timeout: 6s
+      start_period: 10s
+      retries: 3
+    volumes:
+      - rockbase-mailkit:/var/lib/rockbase/mailkit
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+  pipeline:
+    image: rockbase:local
+    command: ["pipeline"]
+    profiles: [pipeline]
+    environment:
+      ROCKBASE_SERVICE: pipeline
+      ROCKBASE_MASTER_CSV: /var/lib/rockbase/data/master.csv
+      ROCKBASE_MAILKIT_CONFIG: /var/lib/rockbase/data/mailkit.toml
+      ROCKBASE_PIPELINE_STATE: /var/lib/rockbase/state/pipeline.json
+      ROCKBASE_PIPELINE_FETCH_OUT: /var/lib/rockbase/data/workbench/replies-current
+      ROCKBASE_PIPELINE_DATE: "${ROCKBASE_PIPELINE_DATE:-}"
+      ROCKBASE_PIPELINE_PLATFORM: "${ROCKBASE_PIPELINE_PLATFORM:-youtube}"
+      ROCKBASE_PIPELINE_RETRIES: "${ROCKBASE_PIPELINE_RETRIES:-0}"
+      ROCKBASE_PIPELINE_WITH_S1: "${ROCKBASE_PIPELINE_WITH_S1:-0}"
+      ROCKBASE_PIPELINE_S1_APPLY: "${ROCKBASE_PIPELINE_S1_APPLY:-0}"
+      ROCKBASE_PIPELINE_S2_WRITE: "${ROCKBASE_PIPELINE_S2_WRITE:-0}"
+      ROCKBASE_PIPELINE_WITH_S5: "${ROCKBASE_PIPELINE_WITH_S5:-0}"
+      ROCKBASE_PIPELINE_S5_WRITE: "${ROCKBASE_PIPELINE_S5_WRITE:-0}"
+      ROCKBASE_PIPELINE_EXECUTE_SEND: "${ROCKBASE_PIPELINE_EXECUTE_SEND:-0}"
+      ROCKBASE_PIPELINE_EXECUTE_SYNC: "${ROCKBASE_PIPELINE_EXECUTE_SYNC:-0}"
+    volumes:
+      - rockbase-data:/var/lib/rockbase/data
+      - rockbase-state:/var/lib/rockbase/state
+      - rockbase-workbench:/var/lib/rockbase/workbench
+      - rockbase-mailkit:/var/lib/rockbase/mailkit
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+  health:
+    image: rockbase:local
+    command: ["health"]
+    profiles: [health]
+    environment:
+      ROCKBASE_SERVICE: health
+      ROCKBASE_HEALTH_STATE: /var/lib/rockbase/state/pipeline.json
+    volumes:
+      - rockbase-state:/var/lib/rockbase/state:ro
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
 
 volumes:
   rockbase-console-state:
+  rockbase-runs:
+  rockbase-data:
+  rockbase-workbench:
+  rockbase-mailkit:
+  rockbase-state:

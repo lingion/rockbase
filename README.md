@@ -51,28 +51,39 @@ python -m pytest -q
 
 The default suite uses fake data and local loopback services. It checks request contracts, parsing, stage wiring, preview/write boundaries, state persistence, and security controls. It does not prove access, quota, deliverability, or permissions for a real third-party account.
 
-## Docker console
+## Full-project Docker runtime
 
-The Rockbase Console is an authenticated operations workbench for discovering runs, inspecting stage output, pausing/resuming runs, approving gated actions, and terminating a run. It uses session cookies, CSRF protection, viewer/operator roles, an append-only JSONL audit stream, and a strict same-origin content policy.
+The Docker image contains the whole Rockbase project: `skills/`, `rockbase/`, `scripts/`, `mailkit/`, `console/`, templates, and operational docs. The Console is only the control plane. `docker-compose.yml` runs the same full-source image as four explicit roles:
 
-The image runs as an unprivileged user. The compose definition binds the console to loopback, uses a read-only root filesystem, a `/tmp` tmpfs, dropped Linux capabilities, `no-new-privileges`, and a persistent console data volume.
+| Service | Role |
+| --- | --- |
+| `console` | Authenticated operations workbench on `127.0.0.1:8790` |
+| `receiver` | Mailkit inbound receiver on `127.0.0.1:8788` |
+| `pipeline` | One-shot S1/S2/mailkit/S3/S5 business pipeline |
+| `health` | One-shot state-file health probe |
 
-```bash
-docker build -t rockbase-console:local .
-docker run --rm \
-  --name rockbase-console \
-  -p 127.0.0.1:8790:8790 \
-  -v rockbase-console-data:/var/lib/rockbase/console \
-  rockbase-console:local
-```
-
-If Docker Compose is available:
+Build and start the long-running services:
 
 ```bash
-docker compose up --build
+docker build -t rockbase:local .
+docker compose up --build -d console receiver
+curl --fail http://127.0.0.1:8790/api/health
+curl --fail http://127.0.0.1:8788/api/health
 ```
 
-The browser entry point is `http://127.0.0.1:8790`. Set console configuration through environment variables; do not commit credentials or production state.
+Run the complete pipeline as a one-shot service after mounting/provisioning the data volume:
+
+```bash
+docker compose --profile pipeline run --rm pipeline
+```
+
+Probe the persisted pipeline state:
+
+```bash
+docker compose --profile health run --rm health
+```
+
+All roles use an unprivileged user, a read-only root filesystem, `/tmp` tmpfs, dropped Linux capabilities, `no-new-privileges`, and named volumes for console state, run state, mailkit data, master data, and workbench artifacts. The image never contains credentials or production data. Set `ROCKBASE_MASTER_CSV` and `ROCKBASE_MAILKIT_CONFIG` to paths under the mounted data volume before running the pipeline.
 
 Important console variables:
 

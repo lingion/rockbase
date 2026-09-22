@@ -128,6 +128,7 @@ def run_pipeline(
     pause_file: Path | None = None,
     approval_files: Mapping[str, Path] | None = None,
     console_run: bool = False,
+    run_id: str | None = None,
 ) -> int:
     """Run stages in order, resuming only valid completed stages."""
     if retries < 0:
@@ -139,6 +140,8 @@ def run_pipeline(
 
     state = _load_state(state_path)
     stage_state = state.setdefault("stages", {})
+    if run_id:
+        state["run_id"] = run_id
     state["runner_pid"] = os.getpid()
     try:
         state["runner_pgid"] = os.getpgid(os.getpid())

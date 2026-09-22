@@ -51,28 +51,39 @@ python -m pytest -q
 
 默认测试使用假数据和本地 loopback 服务，验证请求契约、解析、阶段接线、preview/write 边界、状态持久化和安全控制。它不会证明真实第三方账号的权限、额度、投递能力或可用性。
 
-## Docker 控制台
+## 完整项目的 Docker 运行
 
-Rockbase Console 是带认证的运维工作台，可查看运行、查看阶段输出、暂停/恢复运行、批准有副作用的动作，以及终止运行。它使用 session cookie、CSRF 防护、viewer/operator 角色、JSONL 审计流和严格的同源内容策略。
+Docker 镜像包含整个 Rockbase 项目：`skills/`、`rockbase/`、`scripts/`、`mailkit/`、`console/`、templates 和运维文档。Console 只是控制平面。`docker-compose.yml` 把同一份全源码镜像同时用作四个明确的角色：
 
-镜像以非特权用户运行。Compose 配置绑定 loopback，使用只读根文件系统、`/tmp` tmpfs、丢弃 Linux capability、`no-new-privileges` 和持久化 Console 数据卷。
+| 服务 | 角色 |
+| --- | --- |
+| `console` | `127.0.0.1:8790` 上带认证的运维工作台 |
+| `receiver` | `127.0.0.1:8788` 上的 mailkit 入站接收端 |
+| `pipeline` | 一次性执行 S1/S2/mailkit/S3/S5 业务链路 |
+| `health` | 一次性对状态文件做健康探测 |
 
-```bash
-docker build -t rockbase-console:local .
-docker run --rm \
-  --name rockbase-console \
-  -p 127.0.0.1:8790:8790 \
-  -v rockbase-console-data:/var/lib/rockbase/console \
-  rockbase-console:local
-```
-
-如果本机提供 Docker Compose：
+构建并启动常驻服务：
 
 ```bash
-docker compose up --build
+docker build -t rockbase:local .
+docker compose up --build -d console receiver
+curl --fail http://127.0.0.1:8790/api/health
+curl --fail http://127.0.0.1:8788/api/health
 ```
 
-浏览器访问 `http://127.0.0.1:8790`。配置通过环境变量注入，不要提交凭据或生产状态。详细的账号初始化、部署目录和 API 契约见 [Console 运维文档](docs/console-operations.md)。
+在挂载好数据卷后用一次性服务运行完整业务链路：
+
+```bash
+docker compose --profile pipeline run --rm pipeline
+```
+
+对持久化的链路状态做一次健康探测：
+
+```bash
+docker compose --profile health run --rm health
+```
+
+所有角色都以非特权用户运行，使用只读根文件系统、`/tmp` tmpfs、丢弃 Linux capability、`no-new-privileges`，并通过命名卷分别持久化 console 状态、运行状态、mailkit 数据、主表数据和 workbench 产物。镜像内不含凭据或生产数据。运行 pipeline 前必须把 `ROCKBASE_MASTER_CSV` 和 `ROCKBASE_MAILKIT_CONFIG` 指向已挂载数据卷里的具体路径。
 
 ## 编排与健康检查
 
