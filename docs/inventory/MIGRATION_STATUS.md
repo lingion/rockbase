@@ -2,6 +2,8 @@
 
 ## 已完成
 
+- 交付 loopback-first Rockbase Console：认证、viewer/operator 角色、CSRF、运行发现、阶段时间线、暂停/恢复/终止、send/sync 审批和 JSONL 审计。
+- 提供无构建静态前端、systemd 单元、nginx TLS 反代示例和本地运维恢复指南。
 - 保留 V1 的 17 个 Skill 入口及目录结构。
 - 新增根级 `pyproject.toml`、pytest 配置和可安装的 `rockbase` 兼容包。
 - 将依赖拆为 base、gmail、browser、ocr、social、llm 六组。
@@ -13,7 +15,7 @@
 
 - 未把 17 个 Skill 重写为统一 CLI。
 - 未清零所有历史 `${ROCKBASE_HOME}`、`PYTHONPATH` 和 CWD 假设。
-- 未建立全量机器可读 registry、capability 治理、写入二次确认平台和跨系统 CI。
+- 未建立全量机器可读 registry、capability 治理、外部通知供应商、真实账号验收和跨系统 CI；控制台的二次确认仅覆盖本机 operator 工作流。
 - 未使用真实 Gmail、Feishu、社媒、数据服务或生产主表做端到端验收。
 - 未包含账号、Token、Cookie、浏览器 Profile、历史邮件或真实业务数据。
 

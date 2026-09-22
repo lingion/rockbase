@@ -228,6 +228,7 @@ The current orchestrator covers the server-side S2 → mailkit → S3 mail loop,
 - [mailkit guide](mailkit/README.md)
 - [LLM endpoint ADR](docs/adr/0002-llm-openai-compatible-sdk.md)
 - [Multimodal OCR ADR](docs/adr/0003-direct-multimodal-ocr.md)
+- [Rockbase Console operations](docs/console-operations.md)
 
 ## License and data
 
@@ -456,6 +457,7 @@ cd mailkit && python3 tests/test_smoke.py
 - [mailkit 使用说明](mailkit/README.md)
 - [LLM endpoint ADR](docs/adr/0002-llm-openai-compatible-sdk.md)
 - [多模态 OCR ADR](docs/adr/0003-direct-multimodal-ocr.md)
+- [Rockbase 控制台运维指南](docs/console-operations.md)
 
 ## 数据和凭据
 
