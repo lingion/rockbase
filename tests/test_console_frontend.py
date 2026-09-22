@@ -31,6 +31,19 @@ def test_frontend_contract_has_login_timeline_controls_and_dialogs():
     assert "innerHTML" not in js
 
 
+def test_frontend_supports_persisted_bilingual_ui():
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    js = (STATIC / "console.js").read_text(encoding="utf-8")
+
+    for marker in ("data-i18n=", "data-i18n-aria-label=", 'data-locale="en"', 'data-locale="zh-CN"',
+                   'role="group"', "aria-label"):
+        assert marker in html
+    for marker in ("const messages", '"zh-CN"', "rockbase-console-locale", '"en"',
+                   "querySelectorAll", "dataset.i18n"):
+        assert marker in js
+    assert 'document.documentElement.lang' in js
+
+
 def test_frontend_css_covers_focus_mobile_and_reduced_motion():
     css = (STATIC / "console.css").read_text(encoding="utf-8")
 

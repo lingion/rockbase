@@ -2,7 +2,33 @@
 
 This guide covers local-only operation of the Rockbase operations console. The
 console binds to `127.0.0.1:8790` by default and exposes the loopback HTTP API
-plus the static workbench.
+plus the static workbench. The recommended runtime is the Docker image; the
+image contains the service and static assets, while only console state is
+persisted outside the container.
+
+## Language
+
+The workbench opens in English. Use the `EN` / `中文` control on the login page
+or top bar to switch languages. The choice is stored in the browser only and
+is not sent to the server.
+
+## Docker startup
+
+Install Docker Compose v2, then run from the repository root:
+
+```bash
+docker compose up --build -d
+curl --fail http://127.0.0.1:8790/api/health
+docker compose logs -f console
+```
+
+The Compose file publishes only `127.0.0.1:8790`, runs as the unprivileged
+`rockbase` user, drops Linux capabilities, and persists state in the
+`rockbase-console-state` volume. Stop it with `docker compose down`; use
+`docker compose down -v` only when intentionally deleting console sessions,
+approvals, and audit history. No demo account or external credential is baked
+into the image: provision `users.toml` in the mounted state volume before
+expecting login to work.
 
 ## Account provisioning
 

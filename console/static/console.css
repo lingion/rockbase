@@ -1,6 +1,11 @@
 * { box-sizing: border-box; }
 :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #15242E; background: #E8ECEF; }
 body { margin: 0; min-width: 320px; }
+button[aria-pressed="true"] { background: #0B6BCB; color: #fff; border-color: #0B6BCB; }
+.language-switcher { display: inline-flex; gap: .2rem; align-items: center; }
+.language-button { min-width: 2.5rem; padding: .35rem .5rem; font-size: .75rem; }
+.language-button + .language-button { margin-left: 0; }
+.login-panel > .language-switcher { display: flex; justify-content: flex-end; margin: -.5rem -.5rem 1.5rem; }
 button, input, select { font: inherit; }
 button { border: 1px solid #5B6B76; background: #fff; color: #15242E; border-radius: 4px; padding: .55rem .8rem; cursor: pointer; }
 button:hover { border-color: #0B6BCB; }

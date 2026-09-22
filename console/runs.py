@@ -189,6 +189,14 @@ class RunManager:
                 raise ValueError(f"invalid {key}")
         return result
 
+    def list_runs(self) -> list[dict[str, Any]]:
+        """Expose validated run state to the HTTP layer."""
+        return self.runs.list_runs()
+
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
+        """Expose one validated run state to the HTTP layer."""
+        return self.runs.get_run(run_id)
+
     def _state_path(self, run_id: str) -> Path:
         if not _valid_id(run_id):
             raise ValueError("invalid run id")

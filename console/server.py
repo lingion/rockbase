@@ -20,7 +20,7 @@ _STATIC_DIR = Path(__file__).with_name("static")
 
 
 def make_server(*, config: ConsoleConfig, run_manager: Any, sessions: SessionStore,
-                users: dict[str, User], audit: AuditLog) -> ThreadingHTTPServer:
+                users: dict[str, User], audit: AuditLog, bind_port: int = 0) -> ThreadingHTTPServer:
     class ConsoleHandler(BaseHTTPRequestHandler):
         server_version = "RockbaseConsole/1"
 
@@ -212,8 +212,7 @@ def make_server(*, config: ConsoleConfig, run_manager: Any, sessions: SessionSto
         def log_message(self, format: str, *args: Any) -> None:
             return
 
-    server = ThreadingHTTPServer((config.host, 0), ConsoleHandler)
-    return server
+    return ThreadingHTTPServer((config.host, bind_port), ConsoleHandler)
 
 
 def main() -> int:
@@ -228,7 +227,8 @@ def main() -> int:
                          sessions=SessionStore(config.session_file,
                                                ttl_seconds=config.session_ttl_seconds,
                                                cookie_secure=config.cookie_secure),
-                         users=load_users(config.users_file), audit=manager.audit)
+                         users=load_users(config.users_file), audit=manager.audit,
+                         bind_port=config.port)
     server.server_address = (config.host, config.port)
     server.serve_forever()
     return 0
