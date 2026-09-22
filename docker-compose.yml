@@ -1,0 +1,28 @@
+services:
+  console:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rockbase-console:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8790:8790"
+    environment:
+      ROCKBASE_CONSOLE_HOST: "0.0.0.0"
+      ROCKBASE_CONSOLE_PORT: "8790"
+      ROCKBASE_CONSOLE_ALLOW_REMOTE: "1"
+      ROCKBASE_CONSOLE_BASE_DIR: /var/lib/rockbase/console
+      ROCKBASE_CONSOLE_REPO_ROOT: /opt/rockbase
+      ROCKBASE_CONSOLE_SESSION_TTL_SECONDS: "28800"
+    volumes:
+      - rockbase-console-state:/var/lib/rockbase/console
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  rockbase-console-state:

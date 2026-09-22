@@ -43,14 +43,16 @@ def inspect_state(state_path: Path) -> dict[str, Any]:
             base["pending_stages"].append(name)
         elif status in {"running", "retrying"}:
             base["running_stages"].append(name)
-        if status == "completed":
+        if status == "completed" and isinstance(record, dict):
             parsed = _parse_time(record.get("finished_at"))
             if parsed:
                 successes.append((parsed, record["finished_at"]))
 
     if successes:
         base["last_success_at"] = max(successes)[1]
-    if base["failed_stages"]:
+    if state.get("status") == "interrupted":
+        base.update({"status": "critical", "reason": "run interrupted", "exit_code": 2})
+    elif base["failed_stages"]:
         base.update({"status": "critical", "exit_code": 2})
     elif base["running_stages"]:
         base.update({"status": "degraded", "reason": "stage still running", "exit_code": 1})
