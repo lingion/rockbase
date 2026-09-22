@@ -1,2 +1,41 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Rockbase Console</title></head><body><main id="app">Rockbase Console</main></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Rockbase Console</title>
+  <link rel="stylesheet" href="console.css">
+</head>
+<body>
+  <main class="shell">
+    <section id="login-view" class="login-panel" aria-labelledby="login-title">
+      <h1 id="login-title">Rockbase Console</h1>
+      <form id="login-form">
+        <label for="username">Username</label><input id="username" name="username" autocomplete="username" required>
+        <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required>
+        <button type="submit">Sign in</button><p id="login-error" class="error" role="alert"></p>
+      </form>
+    </section>
+
+    <section id="console-view" hidden>
+      <header class="topbar"><div><p class="eyebrow">OPERATIONS</p><h1>Rockbase Console</h1></div><div class="identity"><span id="identity-label"></span><button id="logout-button" class="quiet">Sign out</button></div></header>
+      <div class="workspace">
+        <nav class="run-nav" aria-labelledby="run-list-title"><div class="section-heading"><h2 id="run-list-title">Runs</h2><button id="new-run-button" class="quiet">New</button></div><ul id="run-list"></ul></nav>
+        <section class="workbench" aria-labelledby="selected-run-title">
+          <div class="section-heading"><div><p class="eyebrow">PIPELINE</p><h2 id="selected-run-title">No run selected</h2></div><span id="run-status" class="status-badge"></span></div>
+          <ol id="stage-timeline" class="stage-timeline" aria-live="polite"></ol>
+          <section class="detail-panel" aria-labelledby="current-stage-title"><h3 id="current-stage-title">Current stage</h3><p id="current-stage" class="mono">Select a run to inspect stage details.</p><pre id="stage-output" class="log-box"></pre></section>
+          <div class="controls" aria-label="Run controls"><button id="pause-button">Pause</button><button id="resume-button">Resume</button><button id="approve-button">Approve gate</button><button id="kill-button" class="danger">Terminate</button></div>
+          <p id="action-message" role="status" class="action-message"></p>
+        </section>
+      </div>
+      <section class="audit-panel" aria-labelledby="audit-title"><h2 id="audit-title">Audit stream</h2><ul id="audit-list"></ul></section>
+    </section>
+  </main>
+
+  <dialog id="kill-dialog"><form method="dialog"><h2>Terminate run?</h2><p id="kill-confirmation"></p><button value="cancel">Cancel</button><button id="kill-confirm" value="confirm" class="danger">Terminate</button></form></dialog>
+  <dialog id="approval-dialog"><form id="approval-form"><h2>Approve write gate</h2><label for="approval-gate">Gate</label><select id="approval-gate"><option value="send">Send</option><option value="sync">Sync</option></select><label for="batch-label">Type batch label to confirm</label><input id="batch-label" required pattern="[A-Za-z0-9][A-Za-z0-9._:-]{0,127}"><div><button type="button" id="approval-cancel">Cancel</button><button type="submit">Approve</button></div></form></dialog>
+  <script src="console.js" defer></script>
+</body>
+</html>
