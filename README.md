@@ -4,7 +4,7 @@ Rockbase is a server-oriented creator outreach automation toolkit. It discovers 
 
 It is a Python source repository with an optional Dockerized operations console. It is not a hosted SaaS service, and it does not require Codex to run the business paths.
 
-[中文](#中文)
+[简体中文](README.zh-CN.md)
 
 ## Current status
 
@@ -66,13 +66,13 @@ docker run --rm \
   rockbase-console:local
 ```
 
-If Docker Compose is available, use:
+If Docker Compose is available:
 
 ```bash
 docker compose up --build
 ```
 
-The browser entry point is `http://127.0.0.1:8790`. Set the console configuration through environment variables; do not commit credentials or production state.
+The browser entry point is `http://127.0.0.1:8790`. Set console configuration through environment variables; do not commit credentials or production state.
 
 Important console variables:
 
@@ -279,18 +279,18 @@ These checks prove local contracts and wiring. They do not prove real-account pe
 ## Repository map
 
 ```text
-skills/                                historical business skills and source-specific rules
-mailkit/                               SMTP send, HTTP receive, reply/sent synchronization
-rockbase/                              shared path and configuration helpers
-scripts/run_full_pipeline.py           full stage-list builder
-scripts/rockbase_orchestrator.py       resumable stage executor
-scripts/rockbase_health.py              JSON health check and exit status
-scripts/audit_server_paths.py          portability audit
-console/                               authenticated operations workbench
-Dockerfile / docker-compose.yml        container runtime
- docs/                                 setup, operations, migration notes, ADRs
-tests/                                 offline and local-loopback contract tests
-templates/                             example operational templates
+skills/                         historical business skills and source-specific rules
+mailkit/                        SMTP send, HTTP receive, reply/sent synchronization
+rockbase/                       shared path and configuration helpers
+scripts/run_full_pipeline.py   full stage-list builder
+scripts/rockbase_orchestrator.py resumable stage executor
+scripts/rockbase_health.py     JSON health check and exit status
+scripts/audit_server_paths.py  portability audit
+console/                        authenticated operations workbench
+Dockerfile / docker-compose.yml container runtime
+docs/                           setup, operations, migration notes, ADRs
+tests/                          offline and local-loopback contract tests
+templates/                      example operational templates
 ```
 
 Every skill directory has its own `SKILL.md`. The repository README is the deployment map; skill files contain source-specific fields and destructive-action boundaries.
@@ -311,164 +311,3 @@ Every skill directory has its own `SKILL.md`. The repository README is the deplo
 ## License and data
 
 This repository contains no production credentials, cookies, browser profiles, historical mail, real creator lists, or business data. Example configurations use placeholders. Keep operational data outside the repository and keep deployment copies private.
-
----
-
-# 中文
-
-Rockbase 是一套运行在服务器上的达人外联自动化工具。它负责达人发现与补全、Mail1 外联准备、发信、收信、回复整理、活跃素材处理，以及把审核后的结果写回主表。
-
-它是 Python 源码仓库，带有可选的 Docker 运维控制台；不是托管 SaaS，也不再依赖 Codex 才能运行主要业务链路。
-
-## 当前状态
-
-当前仓库由两层组成：
-
-- `skills/` 下的业务技能：发现、Mail1 生成、回复恢复、活跃素材补全、截图/OCR。
-- `scripts/`、`console/`、`mailkit/` 下的服务器运行层：可恢复编排、健康检查、带认证的运行控制、SMTP/HTTP 邮件传输和本地验证。
-
-服务器运行层已经能够在离线夹具和本地 loopback 服务上运行。真实账号验收不属于仓库测试套件，生产密钥和生产数据也不会进入仓库。
-
-## 流程
-
-```text
-S1 发现/补全
-        |
-        v
-S2 生成 Mail1 ---> mailkit.send ---> 公司 SMTP
-        |                                   |
-        |                                   v
-        +---------------------------- S3 receiver
-                                            |
-                                            v
-                                   回收 / 解析 / 同步回复
-                                            |
-                                            v
-                         S4 活跃素材 ---> S5 OCR/匹配
-                                            |
-                                            v
-                                      审核后的主表
-```
-
-写入采用分阶段方式：先导出或生成，再查看报告，最后备份后 apply。发信和同步默认是 dry-run，必须显式传执行参数。编排器和 Console 对发信、同步还提供额外审批闸门。
-
-## 安装与测试
-
-要求 Python 3.11+。
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e '.[test,llm]'
-python -m pytest -q
-```
-
-默认测试使用假数据和本地 loopback 服务，验证请求契约、解析、阶段接线、preview/write 边界、状态持久化和安全控制。它不会证明真实第三方账号的权限、额度、投递能力或可用性。
-
-## Docker 控制台
-
-Rockbase Console 是带认证的运维工作台，可查看运行、查看阶段输出、暂停/恢复运行、批准有副作用的动作，以及终止运行。它使用 session cookie、CSRF 防护、viewer/operator 角色、JSONL 审计流和严格的同源内容策略。
-
-镜像以非特权用户运行。Compose 配置绑定 loopback，使用只读根文件系统、`/tmp` tmpfs、丢弃 Linux capability、`no-new-privileges` 和持久化 Console 数据卷。
-
-```bash
-docker build -t rockbase-console:local .
-docker run --rm \
-  --name rockbase-console \
-  -p 127.0.0.1:8790:8790 \
-  -v rockbase-console-data:/var/lib/rockbase/console \
-  rockbase-console:local
-```
-
-如果本机提供 Docker Compose：
-
-```bash
-docker compose up --build
-```
-
-浏览器访问 `http://127.0.0.1:8790`。配置通过环境变量注入，不要提交凭据或生产状态。详细的账号初始化、部署目录和 API 契约见 [Console 运维文档](docs/console-operations.md)。
-
-## 编排与健康检查
-
-`scripts/run_mail_loop.py` 可以从已有 Mail1 CSV 开始，串起 mailkit 发信、收信、拉取和同步阶段。它原子持久化状态，校验产物后才跳过已完成阶段，并支持中断后恢复。默认 dry-run，只有批准后的批次才使用 `--execute-send` 和 `--execute-sync`。
-
-`scripts/run_full_pipeline.py` 构建更完整的阶段列表，可选择接入 S1、S2、S5、发信和回复同步。`scripts/rockbase_orchestrator.py` 提供原子状态、阶段顺序、产物检查、重试、超时、暂停标记、审批文件、输出脱敏和 Console 运行登记。
-
-```bash
-python -m scripts.run_full_pipeline \
-  --csv /srv/rockbase/data/master.csv \
-  --config /srv/rockbase/mailkit/config.toml \
-  --state /srv/rockbase/workbench/full-pipeline.json \
-  --fetch-out /srv/rockbase/workbench/replies_2026-09-21 \
-  --date 2026-09-21 \
-  --with-s1 --with-s5 --plan
-```
-
-健康检查：
-
-```bash
-python -m scripts.rockbase_health \
-  --state /srv/rockbase/workbench/full-pipeline.json
-```
-
-返回码为：`0` 健康或完成，`1` 降级或未完成，`2` 状态缺失、无效或失败。systemd service/timer 示例已经提供，但重启策略、告警路由、secret manager 和主机级策略仍由部署方配置。
-
-## 还没有自动化的地方
-
-当前已经自动化的内容包括：阶段构建与执行、状态持久化、重试、超时、暂停/恢复、产物校验、发信/同步审批闸门、输出脱敏、运行查看、健康 JSON、本地 Docker 启动、S1 导出与应用、S2 生成、mailkit 收发、S3 回复同步和 S5 OCR 处理。
-
-剩余边界如下：
-
-| 领域 | 当前边界 |
-| --- | --- |
-| 历史技能统一 | 17 个历史 skill 尚未统一到一个 CLI 和 capability 模型，旧入口仍然存在。 |
-| 全流程覆盖 | full runner 能接入 S1/S5/mail 阶段，但 S2 生成目前只支持 YouTube；并非所有平台和历史流程都已成为一条统一端到端图。 |
-| 路径可移植性 | 历史文件仍有 `${ROCKBASE_HOME}`、CWD、`PYTHONPATH`、`sys.path` 假设；路径审计只负责盘点，不负责迁移。 |
-| 能力注册表 | 没有完整机器可读注册表统一描述每个 skill 的输入、输出、副作用、凭据和策略。 |
-| 通用写入审批 | Console 覆盖本地发信和同步闸门；所有历史写入路径尚未共用一个通用确认协议。 |
-| 外部通知 | 有健康 JSON 和退出码可供 supervisor 使用，但没有内置 Slack、飞书、邮件或 webhook 告警发送层。 |
-| 部署监管 | 编排器有重试，但服务重启、告警路由、secret manager 和主机策略需要部署方配置。 |
-| 可选依赖 CI | Gmail、browser、OCR、social、LLM 依赖组尚未在完整 CI 矩阵中持续全部执行。 |
-| 真实账号验收 | 真实 Gmail/SMTP/receiver、飞书、社交 API、生产主表、额度、权限和投递能力尚未自动验收。凭据和生产数据按设计不进仓库。 |
-| 生产数据迁移 | 生产主表迁移、备份保留、对账和业务签字仍由操作人员负责。 |
-| 跨系统 CI | 尚无覆盖所有历史 skill、可选依赖、Docker、systemd 和所有支持平台的完整仓库级 CI 矩阵。 |
-| 厂商集成 | 当前合入的服务器层没有外部通知厂商或通用业务系统连接器。 |
-
-因此，项目已经能自动执行可重复的离线/服务器流程，但还不是一个覆盖所有历史技能、平台和生产账号的全自动自治平台。代码侧最大的工作是统一入口、扩大覆盖、清理路径依赖、建立能力治理和补齐 CI；真实账号验收及部署策略则属于外部责任。
-
-## 安全边界
-
-- 导出、OCR、邮件操作先使用 dry-run 或 preview。
-- `mailkit.send` 默认 dry-run；`--execute` 才是实际发信。
-- `--s1-apply`、`--s2-write`、`--s5-write`、`--execute-send`、`--execute-sync` 都是明确的写入或副作用开关。
-- 主表写回前必须备份并核对目标路径。
-- 无法验证的邮箱、粉丝数、合作关系或达人事实不得编造。
-- 凭据、cookie、浏览器 profile、真实邮件、真实达人数据、生产 CSV、截图和业务数据不得进入仓库或日志。
-- Console 演示使用隔离 volume 和预览账号；未经部署审查不要指向生产状态。
-
-## 验证命令
-
-```bash
-.venv/bin/python -m pytest -q
-PYTHONPATH=mailkit .venv/bin/python mailkit/tests/test_smoke.py
-PYTHONPATH=mailkit .venv/bin/python mailkit/tests/demo_local_loop.py
-.venv/bin/python -m scripts.audit_server_paths . \
-  --output workbench/server-path-audit.json
-```
-
-这些命令验证本地契约和流程接线，不验证真实账号权限、API 额度、邮件投递、第三方可用性或生产数据正确性。
-
-## 文档
-
-- [安装与自检](docs/SETUP.md)
-- [依赖矩阵](docs/DEPENDENCY_MATRIX.md)
-- [迁移状态](docs/inventory/MIGRATION_STATUS.md)
-- [Phase 2 编排](docs/phase2-orchestration.md)
-- [Phase 3 运维](docs/phase3-operations.md)
-- [Console 运维](docs/console-operations.md)
-- [安全说明](SECURITY.md)
-- [mailkit 指南](mailkit/README.md)
-
-## 许可证与数据
-
-仓库不包含生产凭据、cookie、浏览器 profile、历史邮件、真实达人名单或业务数据。示例配置只使用占位符。运行数据放在仓库之外，部署副本保持私有。
