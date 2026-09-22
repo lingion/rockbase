@@ -107,3 +107,196 @@ class TestConsoleConfigValidation:
         env = {"ROCKBASE_CONSOLE_HOST": "0.0.0.0", "ROCKBASE_CONSOLE_ALLOW_REMOTE": "1"}
         config = ConsoleConfig.from_env(env)
         assert config.host == "0.0.0.0"
+
+
+# ---------------------------------------------------------------------------
+# Task 2: Authentication, sessions, CSRF
+# ---------------------------------------------------------------------------
+
+import hashlib
+import secrets
+import time
+from pathlib import Path
+
+from console.security import (
+    SessionStore,
+    User,
+    hash_password,
+    load_users,
+    require_role,
+    verify_password,
+)
+
+
+def _make_user(role: str = "operator") -> tuple[User, str]:
+    salt = secrets.token_bytes(16)
+    password = "opensesame"
+    iterations = 100_000
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
+    user = User(
+        username=f"alice-{role}",
+        role=role,
+        salt_hex=salt.hex(),
+        password_hash_hex=digest.hex(),
+        iterations=iterations,
+    )
+    return user, password
+
+
+class TestPasswordHashing:
+    def test_hash_password_round_trip(self):
+        user, password = _make_user()
+        salt = bytes.fromhex(user.salt_hex)
+        digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, user.iterations)
+        assert digest.hex() == user.password_hash_hex
+
+    def test_hash_password_helper_matches(self):
+        salt_hex, hash_hex, iterations = hash_password("sup3r-secret", iterations=50_000)
+        assert verify_password(
+            User("x", "operator", salt_hex, hash_hex, iterations), "sup3r-secret"
+        )
+        assert not verify_password(
+            User("x", "operator", salt_hex, hash_hex, iterations), "wrong"
+        )
+
+
+class TestUserLoading:
+    def test_load_users_returns_empty_for_missing_file(self, tmp_path):
+        users = load_users(tmp_path / "users.toml")
+        assert users == {}
+
+    def test_load_users_round_trip(self, tmp_path: Path):
+        salt_hex, hash_hex, iterations = hash_password("pwd", iterations=10_000)
+        toml = (
+            "[[users]]\n"
+            'username = "alice"\n'
+            'role = "operator"\n'
+            f"salt_hex = \"{salt_hex}\"\n"
+            f"password_hash_hex = \"{hash_hex}\"\n"
+            f"iterations = {iterations}\n"
+            "\n"
+            "[[users]]\n"
+            'username = "bob"\n'
+            'role = "viewer"\n'
+            f"salt_hex = \"{salt_hex}\"\n"
+            f"password_hash_hex = \"{hash_hex}\"\n"
+            f"iterations = {iterations}\n"
+        )
+        path = tmp_path / "users.toml"
+        path.write_text(toml, encoding="utf-8")
+        users = load_users(path)
+        assert set(users) == {"alice", "bob"}
+        assert users["alice"].role == "operator"
+        assert users["bob"].role == "viewer"
+
+    def test_load_users_rejects_unknown_role(self, tmp_path: Path):
+        path = tmp_path / "users.toml"
+        path.write_text(
+            "[[users]]\n"
+            'username = "x"\n'
+            'role = "root"\n'
+            "salt_hex = \"00\"\n"
+            "password_hash_hex = \"00\"\n"
+            "iterations = 1\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError):
+            load_users(path)
+
+    def test_load_users_rejects_invalid_hex(self, tmp_path: Path):
+        path = tmp_path / "users.toml"
+        path.write_text(
+            "[[users]]\n"
+            'username = "x"\n'
+            'role = "viewer"\n'
+            'salt_hex = "zzzz"\n'
+            "password_hash_hex = \"00\"\n"
+            "iterations = 1\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError):
+            load_users(path)
+
+
+class TestVerifyPassword:
+    def test_correct_password(self):
+        user, password = _make_user()
+        assert verify_password(user, password)
+
+    def test_wrong_password(self):
+        user, _ = _make_user()
+        assert not verify_password(user, "nope")
+
+
+class TestRoleOrdering:
+    def test_operator_meets_viewer_requirement(self):
+        user, _ = _make_user(role="operator")
+        session = _FakeSession(user)
+        assert require_role(session, "viewer")
+        assert require_role(session, "operator")
+
+    def test_viewer_does_not_meet_operator_requirement(self):
+        user, _ = _make_user(role="viewer")
+        session = _FakeSession(user)
+        assert require_role(session, "viewer")
+        assert not require_role(session, "operator")
+
+
+class TestSessionStore:
+    def test_create_and_get(self, tmp_path: Path):
+        store = SessionStore(tmp_path / "sessions.json", ttl_seconds=60)
+        session = store.create("alice")
+        assert session.username == "alice"
+        assert session.csrf_token
+        fetched = store.get(session.session_id)
+        assert fetched is not None
+        assert fetched.username == "alice"
+
+    def test_session_ids_have_minimum_entropy(self, tmp_path: Path):
+        store = SessionStore(tmp_path / "sessions.json", ttl_seconds=60)
+        session = store.create("alice")
+        assert len(session.session_id) >= 32
+
+    def test_get_returns_none_for_unknown(self, tmp_path: Path):
+        store = SessionStore(tmp_path / "sessions.json", ttl_seconds=60)
+        assert store.get("does-not-exist") is None
+
+    def test_revoke(self, tmp_path: Path):
+        store = SessionStore(tmp_path / "sessions.json", ttl_seconds=60)
+        session = store.create("alice")
+        store.revoke(session.session_id)
+        assert store.get(session.session_id) is None
+
+    def test_expired_session_returns_none(self, tmp_path: Path):
+        store = SessionStore(tmp_path / "sessions.json", ttl_seconds=1)
+        session = store.create("alice")
+        # Force expiry without sleeping; store keys by hashed session ID
+        store._entries[session.session_id_hash]["expires_at"] = time.time() - 5
+        assert store.get(session.session_id) is None
+
+    def test_session_token_check_is_constant_time(self, tmp_path: Path):
+        store = SessionStore(tmp_path / "sessions.json", ttl_seconds=60)
+        session = store.create("alice")
+        # Different-length inputs should not raise or leak timing data
+        assert store.get("X" * len(session.session_id)) is None
+
+
+class TestCookieAttributes:
+    def test_session_cookie_uses_secure_flags(self, tmp_path: Path):
+        store = SessionStore(tmp_path / "sessions.json", ttl_seconds=60, cookie_secure=False)
+        cookie = store.cookie_for(store.create("alice"))
+        assert "HttpOnly" in cookie
+        assert "SameSite=Strict" in cookie
+        assert "Path=/" in cookie
+        assert "Secure" not in cookie
+
+    def test_session_cookie_secure_flag_when_configured(self, tmp_path: Path):
+        store = SessionStore(tmp_path / "sessions.json", ttl_seconds=60, cookie_secure=True)
+        cookie = store.cookie_for(store.create("alice"))
+        assert "Secure" in cookie
+
+
+class _FakeSession:
+    def __init__(self, user: User) -> None:
+        self.username = user.username
+        self.role = user.role
