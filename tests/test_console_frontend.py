@@ -17,16 +17,21 @@ def test_frontend_assets_exist_and_are_self_contained():
     assert "http://" not in html + css + js
 
 
-def test_frontend_contract_has_login_timeline_controls_and_dialogs():
+def test_frontend_contract_has_control_room_regions_and_actions():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     js = (STATIC / "console.js").read_text(encoding="utf-8")
 
-    for marker in ("login-form", "run-list", "stage-timeline", "current-stage", "audit-list",
-                   "pause-button", "resume-button", "approve-button", "kill-button",
-                   "kill-dialog", "approval-dialog"):
+    for marker in (
+        "login-form", "console-view", "navigation-rail", "run-workspace", "run-list",
+        "run-summary", "stage-timeline", "stage-output", "audit-list", "run-search",
+        "pause-button", "resume-button", "approve-button", "kill-button",
+        "kill-dialog", "approval-dialog",
+    ):
         assert marker in html
-    for marker in ("/api/login", "/api/runs", "/api/me", "/api/audit", "visibilitychange",
-                   "state.stages", "textContent", "setInterval"):
+    for marker in (
+        "/api/login", "/api/runs", "/api/me", "/api/audit", "visibilitychange",
+        "setInterval", "stage-progress", "run-started", "run-updated", "setBusy",
+    ):
         assert marker in js
     assert "innerHTML" not in js
 
@@ -35,20 +40,27 @@ def test_frontend_supports_persisted_bilingual_ui():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     js = (STATIC / "console.js").read_text(encoding="utf-8")
 
-    for marker in ("data-i18n=", "data-i18n-aria-label=", 'data-locale="en"', 'data-locale="zh-CN"',
-                   'role="group"', "aria-label"):
+    for marker in (
+        "data-i18n=", "data-i18n-aria-label=", "data-i18n-placeholder=",
+        'data-locale="en"', 'data-locale="zh-CN"', 'role="group"', "aria-label",
+    ):
         assert marker in html
-    for marker in ("const messages", '"zh-CN"', "rockbase-console-locale", '"en"',
-                   "querySelectorAll", "dataset.i18n"):
+    for marker in (
+        "const messages", '"zh-CN"', "rockbase-console-locale", '"en"',
+        "querySelectorAll", "dataset.i18n", "Intl.DateTimeFormat",
+    ):
         assert marker in js
-    assert 'document.documentElement.lang' in js
+    assert "document.documentElement.lang" in js
 
 
-def test_frontend_css_covers_focus_mobile_and_reduced_motion():
+def test_frontend_css_covers_accessibility_responsive_states_and_motion():
     css = (STATIC / "console.css").read_text(encoding="utf-8")
 
     assert ":focus-visible" in css
     assert "prefers-reduced-motion" in css
     assert "@media" in css
-    for color in ("#E8ECEF", "#0B6BCB", "#1B7F4B", "#C43D2F", "#B97D10"):
-        assert color in css
+    assert "--blue:" in css
+    assert "--green:" in css
+    assert "--red:" in css
+    assert "grid-template-columns" in css
+    assert "status-marker" in css

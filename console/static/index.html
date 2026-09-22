@@ -4,43 +4,70 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#F4F5F1">
   <title>Rockbase Console</title>
   <link rel="stylesheet" href="console.css">
 </head>
 <body>
-  <main class="shell">
-    <section id="login-view" class="login-panel" aria-labelledby="login-title">
-      <div class="language-switcher" role="group" aria-label="Language">
+  <main class="app-shell">
+    <section id="login-view" class="login-screen" aria-labelledby="login-title">
+      <div class="login-mark" aria-hidden="true"><span class="mark-dot"></span><span class="mark-line"></span><span class="mark-dot"></span></div>
+      <div class="login-copy">
+        <p class="kicker" data-i18n="eyebrow.operations">Operations console</p>
+        <h1 id="login-title" data-i18n="app.title">Rockbase</h1>
+        <p class="login-intro" data-i18n="auth.intro">Observe runs, approve writes, and keep the pipeline moving.</p>
+      </div>
+      <div class="language-switcher login-language" role="group" data-i18n-aria-label="language.label" aria-label="Language">
         <button type="button" class="language-button" data-locale="en">EN</button>
         <button type="button" class="language-button" data-locale="zh-CN">中文</button>
       </div>
-      <p class="eyebrow" data-i18n="eyebrow.operations">OPERATIONS</p>
-      <h1 id="login-title" data-i18n="app.title">Rockbase Console</h1>
-      <form id="login-form">
-        <label for="username" data-i18n="auth.username">Username</label><input id="username" name="username" autocomplete="username" required>
-        <label for="password" data-i18n="auth.password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required>
-        <button type="submit" data-i18n="auth.signIn">Sign in</button><p id="login-error" class="error" role="alert"></p>
+      <form id="login-form" class="login-form">
+        <div class="field"><label for="username" data-i18n="auth.username">Username</label><input id="username" name="username" autocomplete="username" required></div>
+        <div class="field"><label for="password" data-i18n="auth.password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required></div>
+        <button type="submit" class="primary-button"><span data-i18n="auth.signIn">Sign in</span><span aria-hidden="true">↗</span></button>
+        <p id="login-error" class="error" role="alert"></p>
       </form>
+      <p class="login-footnote" data-i18n="auth.localOnly">Local operator access · activity is recorded in the audit stream.</p>
     </section>
 
-    <section id="console-view" hidden>
-      <header class="topbar"><div><p class="eyebrow" data-i18n="eyebrow.operations">OPERATIONS</p><h1 data-i18n="app.title">Rockbase Console</h1></div><div class="identity"><div class="language-switcher" role="group" data-i18n-aria-label="language.label" aria-label="Language"><button type="button" class="language-button" data-locale="en">EN</button><button type="button" class="language-button" data-locale="zh-CN">中文</button></div><span id="identity-label"></span><button id="logout-button" class="quiet" data-i18n="auth.signOut">Sign out</button></div></header>
-      <div class="workspace">
-        <nav class="run-nav" aria-labelledby="run-list-title"><div class="section-heading"><h2 id="run-list-title" data-i18n="runs.title">Runs</h2><button id="new-run-button" class="quiet" data-i18n="runs.new">New</button></div><ul id="run-list"></ul></nav>
-        <section class="workbench" aria-labelledby="selected-run-title">
-          <div class="section-heading"><div><p class="eyebrow" data-i18n="eyebrow.pipeline">PIPELINE</p><h2 id="selected-run-title" data-i18n="runs.noneSelected">No run selected</h2></div><span id="run-status" class="status-badge"></span></div>
-          <ol id="stage-timeline" class="stage-timeline" aria-live="polite"></ol>
-          <section class="detail-panel" aria-labelledby="current-stage-title"><h3 id="current-stage-title" data-i18n="stage.current">Current stage</h3><p id="current-stage" class="mono" data-i18n="stage.selectPrompt">Select a run to inspect stage details.</p><pre id="stage-output" class="log-box"></pre></section>
-          <div class="controls" data-i18n-aria-label="runs.controls" aria-label="Run controls"><button id="pause-button" data-i18n="actions.pause">Pause</button><button id="resume-button" data-i18n="actions.resume">Resume</button><button id="approve-button" data-i18n="actions.approve">Approve gate</button><button id="kill-button" class="danger" data-i18n="actions.terminate">Terminate</button></div>
+    <section id="console-view" class="console-view" hidden>
+      <header class="app-header">
+        <a class="brand" href="/" aria-label="Rockbase Console"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span><span><strong>Rockbase</strong><small data-i18n="eyebrow.operations">Operations console</small></span></a>
+        <div class="header-tools">
+          <span class="connection-state"><span class="state-dot state-dot-live" aria-hidden="true"></span><span data-i18n="connection.live">Loopback live</span></span>
+          <div class="language-switcher" role="group" data-i18n-aria-label="language.label" aria-label="Language"><button type="button" class="language-button" data-locale="en">EN</button><button type="button" class="language-button" data-locale="zh-CN">中文</button></div>
+          <span id="identity-label" class="identity-label"></span>
+          <button id="logout-button" class="text-button" data-i18n="auth.signOut">Sign out</button>
+        </div>
+      </header>
+
+      <div class="console-layout">
+        <aside class="navigation-rail" aria-label="Workspace navigation">
+          <div class="rail-action"><button id="new-run-button" class="new-run-button"><span aria-hidden="true">＋</span><span data-i18n="runs.new">New run</span></button></div>
+          <div class="rail-section">
+            <div class="rail-heading"><h2 id="run-list-title" data-i18n="runs.title">Runs</h2><span id="run-count" class="count-badge">0</span></div>
+            <div class="run-filter" role="search"><label class="sr-only" for="run-search" data-i18n="runs.search">Search runs</label><span aria-hidden="true">⌕</span><input id="run-search" type="search" data-i18n-placeholder="runs.search" placeholder="Search runs"></div>
+            <nav aria-labelledby="run-list-title"><ul id="run-list" class="run-list"></ul></nav>
+            <p id="run-empty" class="empty-state" hidden data-i18n="runs.empty">No runs match this search.</p>
+          </div>
+          <div class="rail-section rail-audit-link"><div class="rail-heading"><h2 data-i18n="audit.title">Audit stream</h2><span class="status-ring" aria-hidden="true"></span></div><p data-i18n="audit.subtitle">Recent operator activity</p></div>
+        </aside>
+
+        <main class="run-workspace" aria-labelledby="selected-run-title">
+          <div class="workspace-heading"><div><p class="kicker" data-i18n="eyebrow.pipeline">Pipeline</p><h1 id="selected-run-title" data-i18n="runs.noneSelected">No run selected</h1></div><span id="run-status" class="status-badge"></span></div>
+          <section class="run-summary" aria-label="Run summary"><div class="summary-item"><span data-i18n="summary.started">Started</span><strong id="run-started">—</strong></div><div class="summary-item"><span data-i18n="summary.stages">Stages</span><strong id="run-stage-count">—</strong></div><div class="summary-item"><span data-i18n="summary.updated">Last update</span><strong id="run-updated">—</strong></div><div class="summary-actions"><button id="pause-button" class="action-button" data-i18n="actions.pause">Pause</button><button id="resume-button" class="action-button" data-i18n="actions.resume">Resume</button><button id="approve-button" class="action-button action-button-blue" data-i18n="actions.approve">Approve gate</button><button id="kill-button" class="action-button action-button-danger" data-i18n="actions.terminate">Terminate</button></div></section>
+          <section class="pipeline-panel" aria-labelledby="pipeline-title"><div class="section-heading"><div><h2 id="pipeline-title" data-i18n="stage.title">Stage pulse</h2><p data-i18n="stage.subtitle">The current run, from intake to sync.</p></div><span id="stage-progress" class="progress-label"></span></div><ol id="stage-timeline" class="stage-timeline" aria-live="polite"></ol></section>
+          <section class="detail-panel" aria-labelledby="current-stage-title"><div class="detail-heading"><div><p class="kicker" data-i18n="stage.currentLabel">Current stage</p><h2 id="current-stage-title" data-i18n="stage.current">Select a run to inspect stage details.</h2></div><span id="stage-status-chip" class="stage-status-chip"></span></div><pre id="stage-output" class="log-box" aria-label="Stage output"></pre></section>
           <p id="action-message" role="status" class="action-message"></p>
-        </section>
+        </main>
       </div>
-      <section class="audit-panel" aria-labelledby="audit-title"><h2 id="audit-title" data-i18n="audit.title">Audit stream</h2><ul id="audit-list"></ul></section>
+
+      <section class="audit-panel" aria-labelledby="audit-title"><div class="audit-heading"><div><p class="kicker" data-i18n="audit.kicker">Trace</p><h2 id="audit-title" data-i18n="audit.title">Audit stream</h2></div><p data-i18n="audit.subtitle">Recent operator activity</p></div><ul id="audit-list" class="audit-list"></ul><p id="audit-empty" class="empty-state" hidden data-i18n="audit.empty">No operator activity yet.</p></section>
     </section>
   </main>
 
-  <dialog id="kill-dialog"><form method="dialog"><h2 data-i18n="dialogs.terminateTitle">Terminate run?</h2><p id="kill-confirmation"></p><button value="cancel" data-i18n="actions.cancel">Cancel</button><button id="kill-confirm" value="confirm" class="danger" data-i18n="actions.terminate">Terminate</button></form></dialog>
-  <dialog id="approval-dialog"><form id="approval-form"><h2 data-i18n="dialogs.approveTitle">Approve write gate</h2><label for="approval-gate" data-i18n="dialogs.gate">Gate</label><select id="approval-gate"><option value="send" data-i18n="gates.send">Send</option><option value="sync" data-i18n="gates.sync">Sync</option></select><label for="batch-label" data-i18n="dialogs.batchLabel">Type batch label to confirm</label><input id="batch-label" required pattern="[A-Za-z0-9][A-Za-z0-9._:-]{0,127}"><div><button type="button" id="approval-cancel" data-i18n="actions.cancel">Cancel</button><button type="submit" data-i18n="actions.approve">Approve</button></div></form></dialog>
+  <dialog id="kill-dialog" class="confirm-dialog"><form method="dialog"><div class="dialog-icon dialog-icon-danger" aria-hidden="true">!</div><h2 data-i18n="dialogs.terminateTitle">Terminate run?</h2><p id="kill-confirmation"></p><div class="dialog-actions"><button value="cancel" class="text-button" data-i18n="actions.cancel">Cancel</button><button id="kill-confirm" value="confirm" class="action-button action-button-danger" data-i18n="actions.terminate">Terminate</button></div></form></dialog>
+  <dialog id="approval-dialog" class="confirm-dialog"><form id="approval-form"><div class="dialog-icon dialog-icon-blue" aria-hidden="true">✓</div><h2 data-i18n="dialogs.approveTitle">Approve write gate</h2><p class="dialog-copy" data-i18n="dialogs.approveCopy">This approval authorizes one controlled write path for the selected run.</p><div class="field"><label for="approval-gate" data-i18n="dialogs.gate">Gate</label><select id="approval-gate"><option value="send" data-i18n="gates.send">Send</option><option value="sync" data-i18n="gates.sync">Sync</option></select></div><div class="field"><label for="batch-label" data-i18n="dialogs.batchLabel">Type batch label to confirm</label><input id="batch-label" required pattern="[A-Za-z0-9][A-Za-z0-9._:-]{0,127}"></div><div class="dialog-actions"><button type="button" id="approval-cancel" class="text-button" data-i18n="actions.cancel">Cancel</button><button type="submit" class="action-button action-button-blue" data-i18n="actions.approve">Approve</button></div></form></dialog>
   <script src="console.js" defer></script>
 </body>
 </html>
