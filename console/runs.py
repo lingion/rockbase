@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
+import subprocess
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -154,3 +156,144 @@ class ApprovalStore:
             )
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
             return False
+
+
+class RunManager:
+    """Own managed runner processes and their console control files."""
+
+    _ALLOWED_PARAMETERS = frozenset({"batch_label", "execute_send", "execute_sync", "retries"})
+
+    def __init__(self, *, repo_root: Path, runs: RunRepository, approvals: ApprovalStore,
+                 audit: Any, runner: list[str]) -> None:
+        self.repo_root = Path(repo_root)
+        self.runs = runs
+        self.approvals = approvals
+        self.audit = audit
+        self.runner = tuple(runner)
+        self._processes: dict[str, Any] = {}
+
+    @staticmethod
+    def _validate_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(parameters, dict) or set(parameters) - RunManager._ALLOWED_PARAMETERS:
+            raise ValueError("unsupported run parameter")
+        result = dict(parameters)
+        label = result.get("batch_label", "batch")
+        if not isinstance(label, str) or not _BATCH_LABEL.fullmatch(label):
+            raise ValueError("invalid batch label")
+        if "retries" in result and (isinstance(result["retries"], bool) or
+                                      not isinstance(result["retries"], int) or result["retries"] < 0 or
+                                      result["retries"] > 10):
+            raise ValueError("invalid retries")
+        for key in ("execute_send", "execute_sync"):
+            if key in result and not isinstance(result[key], bool):
+                raise ValueError(f"invalid {key}")
+        return result
+
+    def _state_path(self, run_id: str) -> Path:
+        if not _valid_id(run_id):
+            raise ValueError("invalid run id")
+        return self.runs.runs_dir / f"{run_id}.json"
+
+    def _active(self, run_id: str) -> bool:
+        state = self.runs.get_run(run_id)
+        if state is None or state.get("status") not in {"running", "paused", "retrying"}:
+            return False
+        process = self._processes.get(run_id)
+        if process is not None and process.poll() is None:
+            return True
+        pid = state.get("runner_pid")
+        if isinstance(pid, int):
+            try:
+                os.kill(pid, 0)
+                return True
+            except OSError:
+                pass
+        return state.get("status") == "paused"
+
+    def start(self, parameters: dict[str, Any], *, actor: str, request_id: str) -> dict[str, Any]:
+        clean = self._validate_parameters(parameters)
+        if any(self._active(item["run_id"]) for item in self.runs.list_runs()):
+            raise RuntimeError("an active run already owns the state directory")
+        run_id = f"run-{os.urandom(8).hex()}"
+        state_path = self._state_path(run_id)
+        initial = {"version": 1, "run_id": run_id, "status": "starting", "parameters": clean,
+                   "stages": {"runner": {"status": "running"}},
+                   "runner_pid": None, "runner_pgid": None}
+        _atomic_json(state_path, initial)
+        command = list(self.runner) + ["--run-id", run_id, "--state", str(state_path)]
+        process = subprocess.Popen(command, cwd=self.repo_root,
+                                    start_new_session=True,
+                                    stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL)
+        self._processes[run_id] = process
+        state = dict(initial)
+        state.update({"status": "running", "runner_pid": process.pid, "runner_pgid": process.pid})
+        _atomic_json(state_path, state)
+        self.audit.append("start", request_id=request_id, actor=actor, run_id=run_id,
+                          details={"result": "ok"})
+        return state
+
+    def pause(self, run_id: str, *, actor: str, request_id: str) -> dict[str, Any]:
+        if not self._active(run_id):
+            raise RuntimeError("run is not active")
+        marker = self.runs.runs_dir / f"{run_id}.pause"
+        marker.touch(exist_ok=True)
+        self.audit.append("pause", request_id=request_id, actor=actor, run_id=run_id)
+        return {"run_id": run_id, "status": "pause_requested"}
+
+    def approve(self, run_id: str, gate: str, actor: str, batch_label: str, *, request_id: str) -> dict[str, Any]:
+        record = self.approvals.approve(run_id, gate, actor, batch_label, datetime.now(timezone.utc))
+        self.audit.append("approve", request_id=request_id, actor=actor, run_id=run_id,
+                          details={"gate": gate, "batch_label": batch_label})
+        return record
+
+    def resume(self, run_id: str, parameters: dict[str, Any] | None, *, actor: str, request_id: str) -> dict[str, Any]:
+        state = self.runs.get_run(run_id)
+        if state is None:
+            raise KeyError(run_id)
+        old = state.get("parameters", {})
+        new = self._validate_parameters(parameters if parameters is not None else old)
+        for key, gate in (("execute_send", "send"), ("execute_sync", "sync")):
+            if bool(old.get(key, False)) != bool(new.get(key, False)) and new.get(key, False):
+                if not self.approvals.validate(run_id, gate, datetime.now(timezone.utc)):
+                    raise PermissionError(f"fresh approval required: {gate}")
+        marker = self.runs.runs_dir / f"{run_id}.pause"
+        marker.unlink(missing_ok=True)
+        state["parameters"] = new
+        _atomic_json(self._state_path(run_id), state)
+        self.audit.append("resume", request_id=request_id, actor=actor, run_id=run_id,
+                          details={"old": old, "new": new})
+        return {"run_id": run_id, "status": "resume_requested"}
+
+    def kill(self, run_id: str, *, actor: str, request_id: str) -> dict[str, Any]:
+        state = self.runs.get_run(run_id)
+        if state is None:
+            raise KeyError(run_id)
+        process = self._processes.get(run_id)
+        pgid = state.get("runner_pgid") or (process.pid if process is not None else None)
+        if isinstance(pgid, int):
+            try:
+                os.killpg(pgid, signal.SIGTERM)
+            except OSError:
+                pass
+            if process is not None:
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(pgid, signal.SIGKILL)
+                    except OSError:
+                        pass
+                    process.wait(timeout=3)
+        state["status"] = "interrupted"
+        state["interrupted_at"] = datetime.now(timezone.utc).isoformat()
+        state.pop("runner_pid", None)
+        state.pop("runner_pgid", None)
+        for record in state.get("stages", {}).values():
+            if isinstance(record, dict) and record.get("status") in {"running", "retrying"}:
+                record.update({"status": "failed", "returncode": None,
+                               "error": "interrupted by console kill"})
+        _atomic_json(self._state_path(run_id), state)
+        self.audit.append("kill", request_id=request_id, actor=actor, run_id=run_id)
+        return {"run_id": run_id, "status": "interrupted"}

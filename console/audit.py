@@ -26,11 +26,15 @@ def _safe_details(details: dict[str, Any] | None) -> dict[str, Any]:
         elif isinstance(value, str):
             safe[key] = value[:_MAX_DETAIL_VALUE]
         elif isinstance(value, dict):
-            safe[key] = {
-                str(child_key)[:64]: str(child_value)[:_MAX_DETAIL_VALUE]
-                for child_key, child_value in value.items()
-                if isinstance(child_key, str)
-            }
+            nested: dict[str, Any] = {}
+            for child_key, child_value in value.items():
+                if not isinstance(child_key, str):
+                    continue
+                if isinstance(child_value, (bool, int, float)) or child_value is None:
+                    nested[child_key[:64]] = child_value
+                elif isinstance(child_value, str):
+                    nested[child_key[:64]] = child_value[:_MAX_DETAIL_VALUE]
+            safe[key] = nested
     return safe
 
 
