@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import hmac
 import json
 import sqlite3
@@ -26,6 +27,7 @@ from email.policy import default as default_policy
 from email.utils import parseaddr
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
+from urllib import request as urllib_request
 
 from .events import emit
 
@@ -151,7 +153,8 @@ def parse_mime(raw: bytes) -> dict:
             "references": " ".join(str(msg.get("References", "")).split())}
 
 
-def make_handler(store: Store, api_key: str):
+def make_handler(store: Store, api_key: str, dispatch_url: str = "",
+                 dispatch_secret: str = "", dispatch_timeout: float = 2.0):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):  # 安静：访问日志走结构化事件
             pass
@@ -290,6 +293,22 @@ def make_handler(store: Store, api_key: str):
                     mid = store.put_message(mbx_id, body)
                     emit("inbound_accepted", request_id=self._rid, to=to,
                          external_id=(body.get("external_id") or "")[:120])
+                    if dispatch_url:
+                        _dispatch_inbound_event(
+                            event={
+                                "schema_version": 1,
+                                "event": "inbound.accepted",
+                                "event_id": mid,
+                                "message_id": mid,
+                                "external_id": (body.get("external_id") or "")[:120],
+                                "mailbox": to,
+                                "received_at": body.get("received_at") or utcnow(),
+                                "attempt": 1,
+                            },
+                            url=dispatch_url,
+                            secret=dispatch_secret,
+                            timeout=dispatch_timeout,
+                        )
                     return self._json({"success": True, "data": {"id": mid}})
                 return self._json({"success": False, "error": "not_found"}, 404)
             except Exception as e:  # noqa: BLE001
@@ -325,11 +344,44 @@ def make_handler(store: Store, api_key: str):
     return Handler
 
 
-def serve(db: str, port: int, api_key: str, host: str = "127.0.0.1") -> ThreadingHTTPServer:
+def _dispatch_inbound_event(event: dict, url: str, secret: str,
+                            timeout: float = 2.0) -> None:
+    """Best-effort asynchronous notification of a committed inbound message.
+
+    Fire-and-forget by design: the message is already durably committed, and a
+    slow or unavailable worker must never delay or fail the SMTP-side
+    acknowledgement. The payload carries identifiers only.
+    """
+
+    def _send() -> None:
+        body = json.dumps(event, ensure_ascii=False,
+                          sort_keys=True).encode("utf-8")
+        sig = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+        req = urllib_request.Request(
+            url, data=body, method="POST",
+            headers={"Content-Type": "application/json",
+                     "x-rockbase-event-signature": sig})
+        try:
+            with urllib_request.urlopen(req, timeout=timeout) as resp:
+                resp.read()
+            emit("dispatch_ok", event_id=event.get("event_id", ""))
+        except Exception as e:  # noqa: BLE001 — never break inbound ack
+            emit("dispatch_failed", event_id=event.get("event_id", ""),
+                 error=str(e)[:300])
+
+    threading.Thread(target=_send, daemon=True).start()
+
+
+def serve(db: str, port: int, api_key: str, host: str = "127.0.0.1",
+          dispatch_url: str = "", dispatch_secret: str = "",
+          dispatch_timeout: float = 2.0) -> ThreadingHTTPServer:
     store = Store(db)
     if not api_key:
         print("[warn] api-key 为空 = dev 模式，任何本地进程都能读写邮件", flush=True)
-    srv = ThreadingHTTPServer((host, port), make_handler(store, api_key))
+    srv = ThreadingHTTPServer((host, port), make_handler(store, api_key,
+                                                           dispatch_url,
+                                                           dispatch_secret,
+                                                           dispatch_timeout))
     return srv
 
 
@@ -339,8 +391,16 @@ def main(argv=None) -> int:
     ap.add_argument("--port", type=int, default=8788)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--api-key", default="")
+    ap.add_argument("--dispatch-url", default="",
+                    help="POST a signed inbound.accepted event to this URL after commit")
+    ap.add_argument("--dispatch-secret", default="",
+                    help="HMAC-SHA256 secret shared with the event consumer")
+    ap.add_argument("--dispatch-timeout", type=float, default=2.0)
     args = ap.parse_args(argv)
-    srv = serve(args.db, args.port, args.api_key, args.host)
+    srv = serve(args.db, args.port, args.api_key, args.host,
+                dispatch_url=args.dispatch_url,
+                dispatch_secret=args.dispatch_secret,
+                dispatch_timeout=args.dispatch_timeout)
     print(f"[receiver] http://{args.host}:{args.port}  db={args.db}", flush=True)
     try:
         srv.serve_forever()
