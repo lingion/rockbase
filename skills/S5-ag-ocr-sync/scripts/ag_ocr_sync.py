@@ -1159,11 +1159,20 @@ def build_summary_markdown(
 
 def main() -> None:
     args = parse_args()
-    llm_api_key = ""
-    if args.ocr_engine == "llm":
-        llm_api_key = args.llm_api_key or os.environ.get("OPENAI_API_KEY", "")
-        if not llm_api_key:
-            raise SystemExit("--llm-api-key or OPENAI_API_KEY is required for --ocr-engine llm")
+    # `auto` is capability-driven: native Vision is only meaningful on macOS;
+    # on servers prefer multimodal OCR when configured, then deterministic
+    # tesseract. Explicit engine choices remain authoritative.
+    llm_api_key = args.llm_api_key or os.environ.get("OPENAI_API_KEY", "")
+    effective_engine = args.ocr_engine
+    if effective_engine == "auto":
+        if platform.system() == "Darwin":
+            effective_engine = "vision"
+        elif llm_api_key:
+            effective_engine = "llm"
+        else:
+            effective_engine = "tesseract"
+    if effective_engine == "llm" and not llm_api_key:
+        raise SystemExit("--llm-api-key or OPENAI_API_KEY is required for --ocr-engine llm")
     image_dir = Path(args.image_dir)
     csv_path = Path(args.csv_path)
     images, duplicate_images = select_images(image_dir, args.only_files, args.dedupe_images)
@@ -1174,9 +1183,9 @@ def main() -> None:
 
     vision_payloads: dict[str, list[VisionItem]] = {}
     llm_client = None
-    if args.ocr_engine in {"auto", "vision"}:
+    if effective_engine == "vision":
         vision_payloads = run_vision_batch(image_dir)
-    elif args.ocr_engine == "llm":
+    elif effective_engine == "llm":
         llm_client = build_llm_client(llm_api_key, args.llm_base_url)
 
     extracted: list[ScreenshotData] = []
@@ -1193,24 +1202,9 @@ def main() -> None:
         if vision_items:
             data = extract_from_vision(image, vision_items)
         fallback = None
-        if args.ocr_engine == "tesseract" or args.ocr_engine == "auto":
+        if effective_engine == "tesseract":
             fallback = extract_from_tesseract(image)
-            if args.ocr_engine == "tesseract":
-                data = fallback
-            else:
-                if not data.author_name and fallback.author_name:
-                    data.author_name = fallback.author_name
-                if not data.handle and fallback.handle:
-                    data.handle = fallback.handle
-                if not data.email and fallback.email:
-                    data.email = fallback.email
-                if not data.countries and fallback.countries:
-                    data.countries = fallback.countries
-                if not data.gender and fallback.gender:
-                    data.gender = fallback.gender
-                if not data.age and fallback.age:
-                    data.age = fallback.age
-                data.raw_hits["fallback_engine"] = fallback.raw_hits.get("engine", "")
+            data = fallback
         data.review_reasons = evaluate_review_flags(data)
         data.blocked_fields = get_blocked_fields(data)
         data.review_required = (
