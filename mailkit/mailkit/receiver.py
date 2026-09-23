@@ -293,14 +293,18 @@ def make_handler(store: Store, api_key: str, dispatch_url: str = "",
                     mid = store.put_message(mbx_id, body)
                     emit("inbound_accepted", request_id=self._rid, to=to,
                          external_id=(body.get("external_id") or "")[:120])
-                    if dispatch_url:
+                    # 事件分发：仅当 url+secret 都配置时才发（worker 未配置 = 不发）。
+                    # event_id 取 provider external_id（稳定），无 external_id 时退回消息ID。
+                    if dispatch_url and dispatch_secret:
+                        ext_id = (body.get("external_id") or "").strip()
                         _dispatch_inbound_event(
+
                             event={
                                 "schema_version": 1,
                                 "event": "inbound.accepted",
-                                "event_id": mid,
+                                "event_id": ext_id[:120] or mid,
                                 "message_id": mid,
-                                "external_id": (body.get("external_id") or "")[:120],
+                                "external_id": ext_id[:120],
                                 "mailbox": to,
                                 "received_at": body.get("received_at") or utcnow(),
                                 "attempt": 1,

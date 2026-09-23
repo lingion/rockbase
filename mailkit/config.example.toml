@@ -20,6 +20,10 @@ api_key = "RECEIVER_API_KEY_PLACEHOLDER"
 domain = "yourcompany.example"
 # 轮询的本方地址列表；留空则用 smtp.from_addr
 watch_addrs = ""
+# 可选：提交成功后异步通知 follow-up worker。只传标识，不传邮件正文。
+dispatch_url = ""
+dispatch_secret = ""
+dispatch_timeout = 2.0
 
 [send]
 # 节奏：默认对齐 Rockbase SOP「每 2 小时 3–5 条」
