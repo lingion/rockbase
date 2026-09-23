@@ -51,6 +51,9 @@ services:
       MAILKIT_RECEIVER_HOST: "0.0.0.0"
       MAILKIT_RECEIVER_PORT: "8788"
       MAILKIT_RECEIVER_API_KEY: "${MAILKIT_RECEIVER_API_KEY:-}"
+      # Push the signed inbound.accepted event to the follow-up worker.
+      MAILKIT_DISPATCH_URL: "${MAILKIT_DISPATCH_URL:-http://followup:8789/internal/events/inbound}"
+      MAILKIT_DISPATCH_SECRET: "${MAILKIT_DISPATCH_SECRET:-}"
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8788/api/health', timeout=4)"]
@@ -59,6 +62,40 @@ services:
       start_period: 10s
       retries: 3
     volumes:
+      - rockbase-mailkit:/var/lib/rockbase/mailkit
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+  followup:
+    image: rockbase:local
+    command: ["followup"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8789:8789"
+    environment:
+      ROCKBASE_SERVICE: followup
+      ROCKBASE_MASTER_CSV: /var/lib/rockbase/data/master.csv
+      MAILKIT_DISPATCH_SECRET: "${MAILKIT_DISPATCH_SECRET:-}"
+      MAILKIT_LEDGER_DB: /var/lib/rockbase/mailkit/followup_ledger.db
+      MAILKIT_FOLLOWUP_HOST: "0.0.0.0"
+      MAILKIT_FOLLOWUP_PORT: "8789"
+      MAILKIT_RECEIVER_BASE_URL: http://receiver:8788
+      MAILKIT_RECEIVER_API_KEY: "${MAILKIT_RECEIVER_API_KEY:-}"
+      ROCKBASE_FOLLOWUP_LOCK: /var/lib/rockbase/state/followup.lock
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8789/healthz', timeout=4)"]
+      interval: 30s
+      timeout: 6s
+      start_period: 10s
+      retries: 3
+    volumes:
+      - rockbase-data:/var/lib/rockbase/data
+      - rockbase-state:/var/lib/rockbase/state
       - rockbase-mailkit:/var/lib/rockbase/mailkit
     read_only: true
     tmpfs:

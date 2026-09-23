@@ -4,6 +4,7 @@
 # Picks one Rockbase runtime role per container based on ROCKBASE_SERVICE:
 #   console   -> authenticated operations workbench (HTTP 8790)
 #   receiver  -> mailkit inbound HTTP receiver (mailgofer-compatible API)
+#   followup  -> inbound.accepted event worker (idempotent, no-send)
 #   pipeline  -> one-shot full Rockbase server pipeline (S1/S2/mailkit/S3/S5)
 #   health    -> JSON health probe for supervisord / docker --health-cmd
 #
@@ -47,11 +48,37 @@ case "${ROLE}" in
     : "${MAILKIT_RECEIVER_HOST:=0.0.0.0}"
     : "${MAILKIT_RECEIVER_PORT:=8788}"
     : "${MAILKIT_RECEIVER_API_KEY:=}"
-    exec "${VENV}/bin/python" -m mailkit.mailkit.receiver \
-      --db "${MAILKIT_DB_PATH}" \
-      --host "${MAILKIT_RECEIVER_HOST}" \
-      --port "${MAILKIT_RECEIVER_PORT}" \
+    RECEIVER_ARGS=(
+      --db "${MAILKIT_DB_PATH}"
+      --host "${MAILKIT_RECEIVER_HOST}"
+      --port "${MAILKIT_RECEIVER_PORT}"
       --api-key "${MAILKIT_RECEIVER_API_KEY}"
+    )
+    if [[ -n "${MAILKIT_DISPATCH_URL:-}" ]]; then
+      RECEIVER_ARGS+=(--dispatch-url "${MAILKIT_DISPATCH_URL}")
+      RECEIVER_ARGS+=(--dispatch-secret "${MAILKIT_DISPATCH_SECRET:-}")
+      RECEIVER_ARGS+=(--dispatch-timeout "${MAILKIT_DISPATCH_TIMEOUT:-2.0}")
+    fi
+    exec "${VENV}/bin/python" -m mailkit.mailkit.receiver "${RECEIVER_ARGS[@]}"
+    ;;
+  followup)
+    : "${ROCKBASE_MASTER_CSV:?ROCKBASE_MASTER_CSV must point at the master CSV}"
+    : "${MAILKIT_DISPATCH_SECRET:?MAILKIT_DISPATCH_SECRET must match the receiver's --dispatch-secret}"
+    : "${MAILKIT_LEDGER_DB:=/var/lib/rockbase/mailkit/followup_ledger.db}"
+    : "${MAILKIT_FOLLOWUP_HOST:=0.0.0.0}"
+    : "${MAILKIT_FOLLOWUP_PORT:=8789}"
+    : "${MAILKIT_RECEIVER_BASE_URL:=http://receiver:8788}"
+    : "${MAILKIT_RECEIVER_API_KEY:=}"
+    : "${ROCKBASE_FOLLOWUP_LOCK:=/var/lib/rockbase/state/followup.lock}"
+    exec "${VENV}/bin/python" -m mailkit.mailkit.followup_worker \
+      --host "${MAILKIT_FOLLOWUP_HOST}" \
+      --port "${MAILKIT_FOLLOWUP_PORT}" \
+      --ledger-db "${MAILKIT_LEDGER_DB}" \
+      --master "${ROCKBASE_MASTER_CSV}" \
+      --dispatch-secret "${MAILKIT_DISPATCH_SECRET}" \
+      --receiver-base-url "${MAILKIT_RECEIVER_BASE_URL}" \
+      --receiver-api-key "${MAILKIT_RECEIVER_API_KEY}" \
+      --lock-path "${ROCKBASE_FOLLOWUP_LOCK}"
     ;;
   pipeline)
     : "${ROCKBASE_MASTER_CSV:?ROCKBASE_MASTER_CSV must point at the master CSV}"
@@ -90,7 +117,7 @@ case "${ROLE}" in
     exec "${VENV}/bin/python" -m scripts.rockbase_health --state "${ROCKBASE_HEALTH_STATE}"
     ;;
   *)
-    echo "unknown ROCKBASE_SERVICE='${ROLE}' (expected console|receiver|pipeline|health)" >&2
+    echo "unknown ROCKBASE_SERVICE='${ROLE}' (expected console|receiver|followup|pipeline|health)" >&2
     exit 64
     ;;
 esac
