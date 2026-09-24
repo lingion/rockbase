@@ -420,6 +420,57 @@ def build_body_v2(row_fields: Dict[str, str], workflow_config: Dict[str, object]
     return build_body(row_fields, workflow_config, variant_name=fallback_variant)
 
 
+_MAIL1_ARTIFACT_KEYS = ("Mail1_Greeting_Name", "Mail1_Hook", "Mail1_Reason", "Mail1_Variant")
+_MAIL1_BODY_LIMIT = 8000
+_MAIL1_REDACTIONS = (
+    # clean_email and any look-alike contact columns never enter the artifact;
+    # the Console decision refers to the row by sheet_row_number only.
+    "clean_email", "email", "contact_email", "phone", "wechat", "telegram",
+)
+
+
+def build_mail1_artifact(
+    row: Dict[str, str],
+    generated: Dict[str, str],
+    validation: Dict[str, object],
+) -> Dict[str, object]:
+    """Bound, redact, and freeze one Mail1 draft for Console approval.
+
+    Only the four LLM-authored Mail1_* keys survive into the payload; every
+    other key the model may have produced (recipients, send mode, execute
+    flags, link policies) is dropped here, so a rogue model response cannot
+    change recipient or send policy. Contact columns are stripped before
+    anything leaves the process. ``pending_action`` is deterministic: it is
+    ``manual_review`` when validation failed or required fields are missing,
+    otherwise ``await_console_decision``.
+    """
+    errors = list(validation.get("errors") or []) if isinstance(validation, dict) else []
+    picked = {key: normalize_text(generated.get(key, "")) for key in _MAIL1_ARTIFACT_KEYS}
+    missing = [key for key in _MAIL1_ARTIFACT_KEYS if not picked[key]]
+    body_text = None
+    if all(picked.values()):
+        try:
+            body_text = build_body({**row, **generated}, {}, variant_name=picked["Mail1_Variant"])
+        except Exception:  # noqa: BLE001 - body is best-effort, validation drives the decision
+            body_text = None
+    ok = bool(validation.get("ok")) and not missing and errors == []
+    pending = "await_console_decision" if ok else "manual_review"
+    return {
+        "stage": "s2.mail1",
+        "payload": {
+            "greeting": picked["Mail1_Greeting_Name"],
+            "hook": picked["Mail1_Hook"],
+            "reason": picked["Mail1_Reason"],
+            "variant": picked["Mail1_Variant"],
+            "body": (body_text or "")[:_MAIL1_BODY_LIMIT],
+            "validation": {"ok": ok, "errors": errors, "warnings": list(validation.get("warnings") or [])},
+            "pending_action": pending,
+        },
+        "validation": {"ok": ok, "errors": errors,
+                       "warnings": [f"missing:{key}" for key in missing]},
+    }
+
+
 def write_audit_csv(path: Path, items: Sequence[Dict[str, str]]) -> None:
     fieldnames = [
         "sheet_row_number",
