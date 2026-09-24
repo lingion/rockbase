@@ -96,24 +96,94 @@ def read_jsonl(path: Path) -> List[Dict[str, Any]]:
     return items
 
 
+def _balanced_object(text: str) -> str:
+    """Extract the first complete JSON object without regex overreach."""
+    start = text.find("{")
+    if start < 0:
+        raise ValueError("No JSON object found in model output")
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:index + 1]
+    raise ValueError("Unterminated JSON object in model output")
+
+
+def _remove_trailing_commas(text: str) -> str:
+    """Remove commas immediately before } or ] outside JSON strings."""
+    out: list[str] = []
+    in_string = False
+    escaped = False
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if in_string:
+            out.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            index += 1
+            continue
+        if char == '"':
+            in_string = True
+            out.append(char)
+            index += 1
+            continue
+        if char == ",":
+            lookahead = index + 1
+            while lookahead < len(text) and text[lookahead].isspace():
+                lookahead += 1
+            if lookahead < len(text) and text[lookahead] in "}]":
+                index += 1
+                continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
 def extract_json(text: str) -> Dict[str, Any]:
     text = (text or "").strip()
     if not text:
         return {}
+    candidates = [text]
     try:
-        return json.loads(text)
-    except json.JSONDecodeError:
+        candidates.append(_balanced_object(text))
+    except ValueError:
         pass
-
-    fence_match = re.search(r"```json\s*(\{.*?\})\s*```", text, flags=re.S)
-    if fence_match:
-        return json.loads(fence_match.group(1))
-
-    brace_match = re.search(r"(\{.*\})", text, flags=re.S)
-    if brace_match:
-        return json.loads(brace_match.group(1))
-
-    raise ValueError("No valid JSON object found in model output")
+    last_error: json.JSONDecodeError | None = None
+    for candidate in candidates:
+        try:
+            value = json.loads(candidate)
+            if isinstance(value, dict):
+                return value
+        except json.JSONDecodeError as error:
+            last_error = error
+        try:
+            value = json.loads(_remove_trailing_commas(candidate))
+            if isinstance(value, dict):
+                return value
+        except json.JSONDecodeError as error:
+            last_error = error
+    raise ValueError(f"No valid JSON object found in model output: {last_error}")
 
 
 def normalize_result(payload: Dict[str, Any]) -> Dict[str, str]:
@@ -243,23 +313,17 @@ def main() -> None:
         last_error = ""
         content = ""
         parsed: Dict[str, str] = {}
-        repair_content = ""
+        repair_content = ""  # retained for raw-output compatibility; never model-filled
         for attempt in range(1, args.max_retries + 1):
             try:
                 content, parsed = request_once(client, args.model, item)
                 issues = validate_result(parsed)
-                if issues:
-                    repair_content, parsed = repair_once(client, args.model, content)
-                    parsed["多平台标记"] = normalize_platform_marker(parsed.get("多平台标记", ""))
-                    parsed["latest_price_basis"] = normalize_basis(parsed.get("latest_price_basis", ""))
-                    issues = validate_result(parsed)
-                    if issues:
-                        last_error = "validation_after_repair_failed:" + "|".join(issues)
-                    else:
-                        last_error = ""
-                else:
-                    last_error = ""
-                break
+                # Syntax repair is local in extract_json. Remaining issues are
+                # semantic/schema failures: retry the original constrained
+                # request, but never spend a second model call on repair.
+                last_error = "validation_failed:" + "|".join(issues) if issues else ""
+                if not issues or attempt == args.max_retries:
+                    break
             except Exception as exc:
                 last_error = str(exc)
                 if attempt == args.max_retries:
