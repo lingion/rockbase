@@ -38,6 +38,7 @@ import uuid
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 from typing import Callable, Optional
 
 from .events import emit
@@ -69,6 +70,9 @@ class WorkerConfig:
     lock_path: str
     sync_replies_callable: Optional[Callable[[str, str], int]] = None
     on_send: Optional[Callable[[], None]] = None  # always None; sanity hook
+    summarize_reply_callable: Optional[Callable[[str], "ReplySummary"]] = None
+    artifact_store: Any = None
+    run_id_prefix: str = "evt"
 
 
 class EventLedger:
@@ -189,7 +193,7 @@ class FollowupWorker:
             return {"status": "duplicate", "event_id": eid, "prior": prior}
 
         # 5) Run reply sync under master lock
-        run_id = f"evt-{eid[:12]}-{uuid.uuid4().hex[:6]}"
+        run_id = f"{self.cfg.run_id_prefix}-{eid[:12]}-{uuid.uuid4().hex[:6]}"
         try:
             with self.lock.acquire(timeout=10.0):
                 snapshot = self._fetch_inbound_snapshot(event)
@@ -208,9 +212,14 @@ class FollowupWorker:
                     if rc != 0:
                         raise RuntimeError(
                             f"master_sync replies exited {rc}")
+            artifact_id, artifact_version, decision_status = self._emit_semantic_artifact(
+                run_id=run_id, event_id=eid, body=body)
             self.ledger.finish(eid, "ok", run_id=run_id)
             emit("followup_ok", event_id=eid, run_id=run_id)
-            return {"status": "ok", "event_id": eid, "run_id": run_id}
+            return {"status": "ok", "event_id": eid, "run_id": run_id,
+                    "artifact_id": artifact_id,
+                    "artifact_version": artifact_version,
+                    "decision_status": decision_status}
         except TimeoutError as e:
             self.ledger.finish(eid, "retryable", run_id=run_id, error=str(e))
             emit("followup_retryable", event_id=eid, error="lock_timeout")
@@ -220,6 +229,40 @@ class FollowupWorker:
             emit("followup_failed", event_id=eid, error=str(e)[:300])
             return {"status": "retryable", "event_id": eid,
                     "error": str(e)[:200], "run_id": run_id}
+
+    def _emit_semantic_artifact(self, *, run_id: str, event_id: str,
+                                 body: bytes) -> tuple[str | None, int | None, str]:
+        """Summarize the inbound reply and persist it as a versioned artifact.
+
+        The summarizer never executes sends. Its output is an envelope; the
+        Console (not the worker) decides whether to advance the pipeline.
+        Returns (artifact_id, version, decision_status); all three are None
+        when no artifact_store is configured (test-only fast path).
+        """
+        if self.cfg.artifact_store is None:
+            return None, None, "no_artifact_store"
+        if self.cfg.summarize_reply_callable is None:
+            from mailkit.mailkit.reply_semantics import summarize_reply as _default_summary
+            summarize = _default_summary
+        else:
+            summarize = self.cfg.summarize_reply_callable
+        try:
+            event = json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return None, None, "invalid_event"
+        latest = str(event.get("latest_reply") or event.get("body") or "")
+        summary = summarize(latest)
+        from rockbase.artifact_store import ArtifactEnvelope
+        envelope = ArtifactEnvelope.new(
+            run_id=run_id, stage_id="s3.summary",
+            payload=summary.to_artifact(),
+            validation={"ok": not summary.manual_review,
+                        "errors": ["manual_review"] if summary.manual_review else [],
+                        "warnings": []},
+        )
+        stored = self.cfg.artifact_store.put(envelope)
+        decision_status = "awaiting_approval" if summary.manual_review else "approved"
+        return stored.artifact_id, stored.version, decision_status
 
     def _fetch_inbound_snapshot(self, event: dict) -> str:
         """Fetch the committed message from the receiver's authenticated

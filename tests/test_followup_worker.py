@@ -273,3 +273,56 @@ def test_snapshot_csv_contains_inbound_row_from_receiver_api(tmp_path):
     assert rows[0]["external_id"] == "<snap-1@remote>"
     assert rows[0]["body"] == "We are interested."
     assert rows[0]["in_reply_to"] == "<out-1@us>"
+
+def test_handle_event_returns_semantic_artifact_ids(tmp_path):
+    """Task 6: a successful run returns the semantic artifact coordinates."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from rockbase.artifact_store import ArtifactStore
+
+    def fake_summary(text):
+        from mailkit.reply_semantics import ReplySummary
+        return ReplySummary(summary="ok summary", conditions=("after brief",),
+                            next_action="send_brief", language="en",
+                            confidence=0.8, manual_review=False)
+
+    store = ArtifactStore(tmp_path / "artifacts")
+    cfg = followup_worker.WorkerConfig(
+        ledger_db=str(tmp_path / "ledger.db"),
+        master_csv=str(tmp_path / "master.csv"),
+        dispatch_secret="s",
+        receiver_base_url="http://127.0.0.1:1",
+        receiver_api_key="k",
+        lock_path=str(tmp_path / "lock"),
+        sync_replies_callable=lambda master_csv, from_csv: None,
+        summarize_reply_callable=fake_summary,
+        artifact_store=store,
+    )
+    worker = followup_worker.FollowupWorker(cfg)
+    event = _make_event(mid="msg-artifact")
+    event["latest_reply"] = "We can proceed after the brief"
+    body = json.dumps(event).encode("utf-8")
+    result = worker.handle_event(body, _sign("s", body))
+
+    assert result["status"] == "ok"
+    assert result["artifact_id"].startswith("art-")
+    assert result["artifact_version"] == 1
+    assert result["decision_status"] in {"awaiting_approval", "approved"}
+
+
+def test_handle_event_without_store_reports_no_artifact_store(tmp_path):
+    cfg = followup_worker.WorkerConfig(
+        ledger_db=str(tmp_path / "ledger.db"),
+        master_csv=str(tmp_path / "master.csv"),
+        dispatch_secret="s",
+        receiver_base_url="http://127.0.0.1:1",
+        receiver_api_key="k",
+        lock_path=str(tmp_path / "lock"),
+        sync_replies_callable=lambda master_csv, from_csv: None,
+    )
+    worker = followup_worker.FollowupWorker(cfg)
+    body = json.dumps(_make_event(mid="msg-nostore")).encode("utf-8")
+    result = worker.handle_event(body, _sign("s", body))
+
+    assert result["status"] == "ok"
+    assert result["artifact_id"] is None
+    assert result["decision_status"] == "no_artifact_store"
