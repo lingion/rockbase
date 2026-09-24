@@ -133,6 +133,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--console-pause-file", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--console-send-approval", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--console-sync-approval", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--mode", choices=["review", "auto"], default=None,
+                        help="review (default): decision stages pause for Console approval; "
+                             "auto: run-scoped pre-authorization for non-forbidden stages")
     parser.add_argument("--retries", type=int, default=0)
     parser.add_argument("--plan", action="store_true")
     args = parser.parse_args(argv)
@@ -191,7 +194,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     return run_pipeline(stages, state_path=args.state, plan_only=args.plan, retries=args.retries,
                         pause_file=args.console_pause_file, approval_files=approval_files,
                         console_run=args.console_run,
-                        run_id=args.run_id or os.environ.get("ROCKBASE_RUN_ID"))
+                        run_id=args.run_id or os.environ.get("ROCKBASE_RUN_ID"),
+                        mode=args.mode)
 
 
 if __name__ == "__main__":

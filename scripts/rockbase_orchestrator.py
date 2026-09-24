@@ -10,7 +10,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 
 @dataclass(frozen=True)
@@ -19,6 +19,9 @@ class Stage:
     command: Sequence[str]
     artifacts: tuple[Path, ...] = ()
     timeout_seconds: int = 1800
+    decision_stage: str | None = None
+    artifact_path: Path | None = None
+    forbidden_auto: bool = False
 
 
 def _now() -> str:
@@ -119,6 +122,35 @@ def _stage_gate(name: str) -> str | None:
     return None
 
 
+def _load_decision(path: Path | None) -> dict | None:
+    if path is None or not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _decision_for_stage(stage: Stage, *, decision_file: Path | None = None,
+                         run_id: str | None = None) -> dict | None:
+    """Resolve a Console decision for a given stage.
+
+    Decisions are read-only here; the producer is the Console (Task 4).
+    CLI/automation callers may pass ``decision_file`` pointing at a JSON file
+    the Console exported (the human partner or a follow-up workflow copies
+    the redacted approval record out of band).
+    """
+    if decision_file is None:
+        return None
+    payload = _load_decision(decision_file)
+    if not payload:
+        return None
+    return payload
+
+
+def _persist_decision_state(state: dict, decision_status: str,
+                             artifact_id: str | None = None) -> None:
+    state["decision_status"] = decision_status
+    state["current_artifact_id"] = artifact_id
+
+
 def run_pipeline(
     stages: Sequence[Stage],
     *,
@@ -129,8 +161,18 @@ def run_pipeline(
     approval_files: Mapping[str, Path] | None = None,
     console_run: bool = False,
     run_id: str | None = None,
+    mode: str | None = None,
+    artifact_store: Any | None = None,
+    decision_store: Any | None = None,
+    decision_files: Mapping[str, Path] | None = None,
 ) -> int:
-    """Run stages in order, resuming only valid completed stages."""
+    """Run stages in order, resuming only valid completed stages.
+
+    ``mode`` pins the run to ``review`` (default; decision stages pause for a
+    Console decision) or ``auto`` (non-forbidden decision stages advance with
+    an authorization record; send/sync gates still apply). The mode is
+    recorded at first start and can never change mid-run.
+    """
     if retries < 0:
         raise ValueError("retries must be non-negative")
     if plan_only:
@@ -138,10 +180,25 @@ def run_pipeline(
             print(f"[plan] {stage.name}: {' '.join(_safe_command(stage.command))}")
         return 0
 
+    if mode is not None and mode not in {"review", "auto"}:
+        raise ValueError(f"invalid run mode: {mode!r}")
+
     state = _load_state(state_path)
     stage_state = state.setdefault("stages", {})
     if run_id:
         state["run_id"] = run_id
+    recorded_mode = state.get("mode")
+    if mode is not None:
+        if recorded_mode is not None and recorded_mode != mode:
+            raise ValueError(
+                f"run mode is fixed at start (recorded={recorded_mode!r}); "
+                f"refusing change to {mode!r}"
+            )
+        state["mode"] = mode
+    elif recorded_mode is None:
+        state["mode"] = "review"
+    effective_mode = state.get("mode", "review")
+    state.setdefault("policy_version", 1)
     state["runner_pid"] = os.getpid()
     try:
         state["runner_pgid"] = os.getpgid(os.getpid())
@@ -149,6 +206,29 @@ def run_pipeline(
         state["runner_pgid"] = os.getpid()
     state["status"] = "running"
     _save_state(state_path, state)
+
+    if run_id is None:
+        run_id = state_path.stem
+
+    def _create_artifact(stage: Stage, record: dict) -> Any | None:
+        """Snapshot the stage output into a versioned envelope for decisions."""
+        if artifact_store is None or not stage.decision_stage:
+            return None
+        try:
+            payload_text = Path(record["artifacts"][0]).read_text(encoding="utf-8")
+        except (KeyError, IndexError, OSError, UnicodeDecodeError):
+            payload_text = ""
+        from rockbase.decision_models import ArtifactEnvelope
+
+        envelope = ArtifactEnvelope.new(
+            run_id=run_id, stage_id=stage.decision_stage,
+            payload={"stage": stage.name, "artifact": payload_text},
+            validation={"ok": True, "errors": [], "warnings": []},
+        )
+        stored = artifact_store.put(envelope)
+        record["artifact_id"] = stored.artifact_id
+        record["artifact_version"] = stored.version
+        return stored
 
     for stage in stages:
         stage_state.setdefault(stage.name, {"status": "pending"})
@@ -165,6 +245,88 @@ def run_pipeline(
             _save_state(state_path, state)
             _print_summary(state)
             return 0
+
+        decision_file = (decision_files or {}).get(stage.name)
+
+        if stage.decision_stage and record.get("status") == "awaiting_approval":
+            # Resume path: a paused decision stage only advances on an
+            # approve / approve_run decision recorded by the Console.
+            decision = _decision_for_stage(stage, decision_file=decision_file,
+                                           run_id=run_id)
+            action = (decision or {}).get("action")
+            if action not in {"approve", "approve_run"}:
+                state.update({"status": "paused",
+                              "paused_at": _now(),
+                              "decision_status": "awaiting_approval"})
+                _save_state(state_path, state)
+                _print_summary(state)
+                return 2
+            _persist_decision_state(state, "approved",
+                                    record.get("artifact_id"))
+            record.update({"status": "completed",
+                           "finished_at": _now(), "returncode": 0})
+            state["status"] = "running"
+            _save_state(state_path, state)
+            print(f"[skip] {stage.name} (decision approved)")
+            continue
+        if stage.decision_stage and effective_mode == "review" \
+                and record.get("status") != "completed":
+            # Run the stage once to produce its artifact, then hold the
+            # enveloped output for a Console decision before any dependent
+            # stage (send/sync/follow-up) may run.
+            record.update({"status": "running", "started_at": _now(),
+                           "command": _safe_command(stage.command), "attempts": 1})
+            _save_state(state_path, state)
+            print(f"[run] {stage.name} (decision boundary)")
+            try:
+                completed = subprocess.run(
+                    _resolve_command(stage.command), check=False, capture_output=True,
+                    text=True, timeout=stage.timeout_seconds,
+                )
+            except subprocess.TimeoutExpired as exc:
+                record.update({"status": "failed", "finished_at": _now(), "returncode": None,
+                               "error": f"timeout after {stage.timeout_seconds}s",
+                               "stdout": _safe_output(exc.stdout or "", stage.command),
+                               "stderr": _safe_output(exc.stderr or "", stage.command)})
+                state["status"] = "failed"
+                _save_state(state_path, state)
+                _print_summary(state)
+                return 124
+            record.update({"finished_at": _now(),
+                           "returncode": completed.returncode,
+                           "stdout": _safe_output(completed.stdout, stage.command),
+                           "stderr": _safe_output(completed.stderr, stage.command),
+                           "artifacts": [str(path) for path in stage.artifacts]})
+            if completed.returncode != 0 or not _artifacts_exist(stage):
+                record.update({"status": "failed",
+                               "error": "stage failed before decision boundary"})
+                state["status"] = "failed"
+                _save_state(state_path, state)
+                _print_summary(state)
+                return completed.returncode or 1
+            _create_artifact(stage, record)
+            _persist_decision_state(state, "awaiting_approval",
+                                    record.get("artifact_id"))
+            record.update({"status": "awaiting_approval"})
+            state["status"] = "awaiting_approval"
+            _save_state(state_path, state)
+            _print_summary(state)
+            return 2
+        if stage.decision_stage and effective_mode == "auto":
+            if stage.forbidden_auto:
+                record.update({"status": "failed", "finished_at": _now(),
+                               "returncode": None,
+                               "error": "forbidden in auto mode"})
+                state["status"] = "failed"
+                _save_state(state_path, state)
+                _print_summary(state)
+                return 1
+            # Pre-authorized for this run: run the stage and record the
+            # authorization alongside the produced artifact.
+            record.update({"status": "running", "started_at": _now(),
+                           "command": _safe_command(stage.command), "attempts": 1})
+            _save_state(state_path, state)
+            print(f"[run] {stage.name} (auto pre-authorized)")
 
         gate = _stage_gate(stage.name) if console_run else None
         if gate is not None:
@@ -221,6 +383,12 @@ def run_pipeline(
             _save_state(state_path, state)
             _print_summary(state)
             return final_code
+
+        if stage.decision_stage and effective_mode == "auto":
+            _create_artifact(stage, record)
+            _persist_decision_state(state, "approved",
+                                    record.get("artifact_id"))
+            _save_state(state_path, state)
 
     state["status"] = "completed"
     state.pop("paused_at", None)
