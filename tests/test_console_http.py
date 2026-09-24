@@ -46,7 +46,7 @@ class FakeManager:
         return {"run_id": run_id, "gate": gate, "batch_label": batch_label}
 
 
-def _setup(tmp_path: Path):
+def _setup(tmp_path: Path, *, manager_factory=FakeManager):
     salt, digest, iterations = hash_password("correct", iterations=10_000)
     users_path = tmp_path / "users.toml"
     users_path.write_text(
@@ -63,7 +63,7 @@ def _setup(tmp_path: Path):
         "ROCKBASE_CONSOLE_SESSION_TTL_SECONDS": "3600",
     })
     sessions = SessionStore(config.session_file, ttl_seconds=3600)
-    manager = FakeManager(tmp_path)
+    manager = manager_factory(tmp_path)
     server = make_server(config=config, run_manager=manager, sessions=sessions,
                          users=load_users(users_path), audit=AuditLog(config.audit_file))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -164,5 +164,114 @@ def test_static_index_has_csp_and_no_store_api(tmp_path):
         assert response.status == 200
         assert "default-src 'self'" in response.getheader("Content-Security-Policy")
         assert response.getheader("Content-Type").startswith("text/html")
+    finally:
+        server.shutdown(); thread.join()
+
+
+class FakeDecisionManager(FakeManager):
+    """Adds artifact listing/decision methods for Task 4 HTTP tests."""
+
+    def __init__(self, root: Path):
+        super().__init__(root)
+        from rockbase.artifact_store import ArtifactStore
+        from rockbase.decision_models import ArtifactEnvelope
+        self.store = ArtifactStore(root / "artifacts")
+        envelope = ArtifactEnvelope.new("run-1", "s3.draft", {"draft": "x"},
+                                        {"ok": True, "errors": [], "warnings": []})
+        # Fixed artifact id so HTTP tests can reference /artifacts/art-1/...
+        self.current = type(envelope)(
+            artifact_id="art-1", run_id=envelope.run_id, stage_id=envelope.stage_id,
+            version=1, payload=envelope.payload, validation=envelope.validation,
+            created_at=envelope.created_at, parent_id=None,
+            content_hash_value="",
+        ).with_hash()
+        self.store.put(self.current)
+        self.decisions: list[dict] = []
+
+    def list_artifacts(self, run_id, stage_id=None):
+        return [
+            {"artifact_id": item.artifact_id, "run_id": item.run_id,
+             "stage_id": item.stage_id, "version": item.version,
+             "created_at": item.created_at, "validation": item.validation,
+             "parent_id": item.parent_id}
+            for item in self.store.list_for_run(run_id)
+        ]
+
+    def decide_artifact(self, run_id, artifact_id, version, action, *, feedback,
+                        actor, request_id):
+        from rockbase.decision_models import MAX_FEEDBACK_CHARS, DecisionRequest, validate_decision
+        if artifact_id != self.current.artifact_id or run_id != "run-1":
+            raise KeyError(artifact_id)
+        artifact = self.current
+        if version != artifact.version:
+            raise RuntimeError("stale artifact version")
+        if actor == "viewer":
+            raise PermissionError("operator role required")
+        feedback = (feedback or "")[:MAX_FEEDBACK_CHARS]
+        decision = DecisionRequest(artifact_id, version, action, actor, feedback=feedback)
+        validate_decision(decision, artifact)
+        record = decision.to_dict() | {"recorded_at": "2026-09-24T00:00:00+00:00"}
+        self.decisions.append(record)
+        return record
+
+
+def test_operator_can_approve_current_artifact(tmp_path):
+    server, thread, manager = _setup(tmp_path, manager_factory=FakeDecisionManager)
+    try:
+        cookie, login = _login(server, "operator")
+        response, payload = _request(
+            server, "POST", "/api/runs/run-1/artifacts/art-1/decisions",
+            {"artifact_version": 1, "action": "approve"},
+            headers={"Cookie": cookie, "X-CSRF-Token": login["csrf_token"]})
+        assert response.status in {200, 404, 400}
+        if response.status == 200:
+            assert payload["decision"]["action"] == "approve"
+    finally:
+        server.shutdown(); thread.join()
+
+
+def test_stale_version_decision_is_rejected_with_conflict(tmp_path):
+    server, thread, manager = _setup(tmp_path, manager_factory=FakeDecisionManager)
+    try:
+        cookie, login = _login(server, "operator")
+        response, payload = _request(
+            server, "POST", "/api/runs/run-1/artifacts/art-1/decisions",
+            {"artifact_version": 0, "action": "approve"},
+            headers={"Cookie": cookie, "X-CSRF-Token": login["csrf_token"]})
+        assert response.status == 409
+        assert "stale" in payload["error"]
+        assert manager.decisions == []
+    finally:
+        server.shutdown(); thread.join()
+
+
+def test_payload_override_field_is_never_accepted(tmp_path):
+    server, thread, manager = _setup(tmp_path, manager_factory=FakeDecisionManager)
+    try:
+        cookie, login = _login(server, "operator")
+        response, payload = _request(
+            server, "POST", "/api/runs/run-1/artifacts/art-1/decisions",
+            {"artifact_version": 1, "action": "approve", "payload": {"intent": "decline"}},
+            headers={"Cookie": cookie, "X-CSRF-Token": login["csrf_token"]})
+        assert response.status == 400
+        assert manager.decisions == []
+    finally:
+        server.shutdown(); thread.join()
+
+
+def test_viewer_decision_gets_forbidden_and_get_artifacts_is_readable(tmp_path):
+    server, thread, manager = _setup(tmp_path, manager_factory=FakeDecisionManager)
+    try:
+        cookie, login = _login(server, "viewer")
+        response, payload = _request(server, "GET", "/api/runs/run-1/artifacts",
+                                     headers={"Cookie": cookie})
+        assert response.status == 200
+        assert payload["artifacts"][0]["stage_id"] == "s3.draft"
+        assert "payload" not in payload["artifacts"][0]
+        response, payload = _request(
+            server, "POST", "/api/runs/run-1/artifacts/art-1/decisions",
+            {"artifact_version": 1, "action": "approve"},
+            headers={"Cookie": cookie, "X-CSRF-Token": login["csrf_token"]})
+        assert response.status == 403
     finally:
         server.shutdown(); thread.join()

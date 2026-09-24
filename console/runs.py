@@ -162,15 +162,19 @@ class RunManager:
     """Own managed runner processes and their console control files."""
 
     _ALLOWED_PARAMETERS = frozenset({"batch_label", "execute_send", "execute_sync", "retries"})
+    _ALLOWED_ACTIONS = frozenset({"approve", "reject", "reject_with_feedback", "approve_run"})
 
     def __init__(self, *, repo_root: Path, runs: RunRepository, approvals: ApprovalStore,
-                 audit: Any, runner: list[str]) -> None:
+                 audit: Any, runner: list[str],
+                 artifact_store: Any | None = None) -> None:
         self.repo_root = Path(repo_root)
         self.runs = runs
         self.approvals = approvals
         self.audit = audit
         self.runner = tuple(runner)
+        self.artifact_store = artifact_store
         self._processes: dict[str, Any] = {}
+        self._decision_records: dict[tuple[str, str, int], dict[str, Any]] = {}
 
     @staticmethod
     def _validate_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
@@ -254,6 +258,78 @@ class RunManager:
         record = self.approvals.approve(run_id, gate, actor, batch_label, datetime.now(timezone.utc))
         self.audit.append("approve", request_id=request_id, actor=actor, run_id=run_id,
                           details={"gate": gate, "batch_label": batch_label})
+        return record
+
+    def list_artifacts(self, run_id: str, stage_id: str | None = None) -> list[dict[str, Any]]:
+        """Expose artifact envelopes for a run without payload bodies."""
+        if self.artifact_store is None:
+            return []
+        if self.runs.get_run(run_id) is None and not _valid_id(run_id):
+            return []
+        items = []
+        for artifact in self.artifact_store.list_for_run(run_id):
+            if stage_id is not None and artifact.stage_id != stage_id:
+                continue
+            items.append({
+                "artifact_id": artifact.artifact_id,
+                "run_id": artifact.run_id,
+                "stage_id": artifact.stage_id,
+                "version": artifact.version,
+                "created_at": artifact.created_at,
+                "parent_id": artifact.parent_id,
+                "validation": artifact.validation,
+                "content_hash": artifact.content_hash(),
+            })
+        return items
+
+    def decide_artifact(self, run_id: str, artifact_id: str, version: int, action: str,
+                        *, feedback: str | None, actor: str, request_id: str) -> dict[str, Any]:
+        """Record a Console decision on the current version of an artifact.
+
+        Stale versions, unknown artifacts, non-operator actors and payload
+        overrides are refused. Duplicate decisions on the same (run,
+        artifact, version, action) return the original record (idempotent).
+        """
+        from rockbase.decision_models import (MAX_FEEDBACK_CHARS, DecisionRequest,
+                                              validate_decision)
+
+        if action not in self._ALLOWED_ACTIONS:
+            raise ValueError("unsupported decision action")
+        if actor == "viewer" or not isinstance(actor, str) or not actor:
+            raise PermissionError("operator role required")
+        if self.runs.get_run(run_id) is None:
+            raise KeyError(run_id)
+        artifact = None
+        for item in self.artifact_store.list_for_run(run_id):
+            if item.artifact_id == artifact_id:
+                artifact = max((artifact, item), key=lambda x: x.version) if artifact else item
+        if artifact is None:
+            raise KeyError(artifact_id)
+        if version != artifact.version:
+            raise RuntimeError(
+                f"stale artifact version: current={artifact.version} got={version}")
+        bounded_feedback = "" if feedback is None else str(feedback)[:MAX_FEEDBACK_CHARS]
+        decision = DecisionRequest(artifact_id, version, action, actor,
+                                   feedback=bounded_feedback or None)
+        validate_decision(decision, artifact)
+        key = (artifact_id, version, hash(action))
+        existing = self._decision_records.get(key)
+        if existing is not None and existing.get("action") == action:
+            self.audit.append("decide_artifact", request_id=request_id, actor=actor,
+                              run_id=run_id,
+                              details={"result": "duplicate", "gate": "artifact",
+                                       "reason": f"{artifact_id}@v{version}"})
+            return existing
+        record = decision.to_dict() | {
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "run_id": run_id,
+        }
+        self._decision_records[key] = record
+        path = self.runs.runs_dir / f"{run_id}.{artifact_id}.{version}.decision.json"
+        _atomic_json(path, record)
+        self.audit.append("decide_artifact", request_id=request_id, actor=actor,
+                          run_id=run_id,
+                          details={"gate": "artifact", "reason": f"{artifact_id}@v{version}"})
         return record
 
     def resume(self, run_id: str, parameters: dict[str, Any] | None, *, actor: str, request_id: str) -> dict[str, Any]:

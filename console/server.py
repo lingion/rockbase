@@ -111,14 +111,25 @@ def make_server(*, config: ConsoleConfig, run_manager: Any, sessions: SessionSto
                 session = self._require_session(request_id)
                 if session is None:
                     return
-                run_id = unquote(path.removeprefix("/api/runs/")).strip("/")
-                if "/" in run_id or not run_id:
-                    self._error(400, "invalid run id", request_id); return
-                result = run_manager.get_run(run_id)
-                if result is None:
-                    self._error(404, "run not found", request_id); return
-                self._send_json(200, result, request_id=request_id)
-                return
+                segments = [unquote(item) for item in
+                            path.removeprefix("/api/runs/").strip("/").split("/")]
+                if len(segments) == 2 and segments[1] == "artifacts":
+                    run_id = segments[0]
+                    if not run_id:
+                        self._error(400, "invalid run id", request_id); return
+                    artifacts = run_manager.list_artifacts(run_id)
+                    self._send_json(200, {"artifacts": artifacts}, request_id=request_id)
+                    return
+                if len(segments) == 1:
+                    run_id = segments[0]
+                    if "/" in run_id or not run_id:
+                        self._error(400, "invalid run id", request_id); return
+                    result = run_manager.get_run(run_id)
+                    if result is None:
+                        self._error(404, "run not found", request_id); return
+                    self._send_json(200, result, request_id=request_id)
+                    return
+                self._error(400, "invalid run id", request_id)
             if path == "/api/health":
                 self._send_json(200, {"status": "ok"}, request_id=request_id)
                 return
@@ -191,6 +202,24 @@ def make_server(*, config: ConsoleConfig, run_manager: Any, sessions: SessionSto
                     result = run_manager.start(payload, actor=session.username, request_id=request_id)
                     self._audit("start", session, request_id, result.get("run_id")); self._send_json(200, result, request_id=request_id); return
                 parts = path.strip("/").split("/")
+                if len(parts) == 6 and parts[:2] == ["api", "runs"] and parts[3] == "artifacts" \
+                        and parts[5] == "decisions":
+                    artifact_id = unquote(parts[4])
+                    run_id = unquote(parts[2])
+                    if not artifact_id or not run_id:
+                        raise ValueError("invalid artifact id")
+                    if set(payload) - {"artifact_version", "action", "feedback"} \
+                            or "artifact_version" not in payload or "action" not in payload:
+                        raise ValueError("invalid decision fields")
+                    version = payload["artifact_version"]
+                    if isinstance(version, bool) or not isinstance(version, int):
+                        raise ValueError("artifact_version must be an integer")
+                    result = run_manager.decide_artifact(
+                        run_id=run_id, artifact_id=artifact_id, version=version,
+                        action=payload["action"], feedback=payload.get("feedback"),
+                        actor=session.username, request_id=request_id)
+                    self._audit("decide_artifact", session, request_id, run_id)
+                    self._send_json(200, {"decision": result}, request_id=request_id); return
                 if len(parts) == 4 and parts[:2] == ["api", "runs"]:
                     run_id, action = parts[2], parts[3]
                     if not run_id or "/" in run_id: raise ValueError("invalid run id")
