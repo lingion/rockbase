@@ -139,6 +139,17 @@ h1, h2, h3 { letter-spacing: -.025em; }
 .log-box { min-height: 5rem; max-height: 15rem; overflow: auto; margin: 1rem 0 0; padding: .9rem; border: 1px solid #28383E; border-radius: 6px; background: #172127; color: #DCE6E3; font: .75rem/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
 .action-message { min-height: 1.3rem; margin: .8rem 0 0; color: var(--green); font-size: .8rem; }
 .action-message.error { color: var(--red); }
+.artifact-panel { max-width: 1600px; margin: 1rem auto 0; padding: 1rem clamp(1.25rem, 4vw, 4rem); border-top: 1px solid var(--rule); background: #EEF1EE; }
+.artifact-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: .9rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+.artifact-card { display: grid; gap: .65rem; padding: 1rem; border: 1px solid var(--rule); border-radius: 10px; background: var(--panel); color: var(--ink); }
+.artifact-card[data-decision-status="approved"] { border-color: var(--green); }
+.artifact-card[data-decision-status="pending"] { border-color: var(--blue); }
+.artifact-heading { display: flex; justify-content: space-between; gap: 1rem; font: .72rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+.artifact-validation { margin: 0; font-size: .8rem; color: var(--green); }
+.artifact-card[data-validation-state="failed"] .artifact-validation { color: var(--red); }
+.artifact-summary { max-height: 9rem; overflow: auto; margin: 0; padding: .7rem; border: 1px solid var(--rule); border-radius: 6px; background: #F8F9F6; font: .72rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+.artifact-controls { display: flex; flex-wrap: wrap; gap: .45rem; }
+.artifact-controls [data-busy="true"] { opacity: .5; pointer-events: none; }
 .audit-panel { max-width: 1600px; margin: 0 auto; padding: 1.2rem clamp(1.25rem, 4vw, 4rem) 2rem; border-top: 1px solid var(--rule); background: #EEF1EE; }
 .audit-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; }
 .audit-heading h2 { margin: 0; font-size: 1.05rem; }

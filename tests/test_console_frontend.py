@@ -64,3 +64,34 @@ def test_frontend_css_covers_accessibility_responsive_states_and_motion():
     assert "--red:" in css
     assert "grid-template-columns" in css
     assert "status-marker" in css
+
+
+def test_frontend_renders_read_only_artifact_approval_cards():
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    js = (STATIC / "console.js").read_text(encoding="utf-8")
+    css = (STATIC / "console.css").read_text(encoding="utf-8")
+
+    # artifact list region + per-card structure exist in markup
+    for marker in (
+        "artifact-panel", "artifact-list", "artifact-empty",
+    ):
+        assert marker in html
+    # feedback textarea exists only for rejection feedback, generated payload
+    # fields stay read-only text
+    assert 'id="artifact-feedback"' in html
+    assert "<textarea" in html
+    # controls submit the Task 4 contract only
+    for marker in (
+        "/artifacts", "artifact_version", "reject_with_feedback", "renderArtifacts",
+        "decision-status", "validation",
+    ):
+        assert marker in js
+    # no editable inputs for generated content: every input in the artifact
+    # panel must be the feedback textarea
+    assert 'type="text"' not in html.split("artifact-panel")[1].split("</section>")[0]
+    # stale-version errors surface to the operator
+    assert "stale" in js
+    # cards disable while a decision request is pending
+    assert "artifactBusy" in js
+    # card styling exists
+    assert "artifact-card" in css
