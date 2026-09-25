@@ -9,6 +9,28 @@ from datetime import datetime
 from pathlib import Path
 
 
+def _load_contracts():
+    try:
+        from rockbase import llm_stage_contracts as _contracts
+    except ImportError:  # pragma: no cover - standalone CLI path
+        import sys as _sys
+        _root = Path(__file__).resolve().parents[4]
+        if str(_root) not in _sys.path:
+            _sys.path.insert(0, str(_root))
+        from rockbase import llm_stage_contracts as _contracts
+    return _contracts
+
+
+def build_enrichment_artifact(row_key, suggestions, evidence, validation):
+    """Adapter to the shared S4 enrichment contract."""
+    return _load_contracts().build_enrichment_artifact(row_key, suggestions, evidence, validation)
+
+
+def apply_approved_artifact(artifact_id, version, target, *, execute=False):
+    """Require an approved current artifact before a write is considered."""
+    return _load_contracts().apply_approved_artifact(artifact_id, version, target, execute=execute)
+
+
 def extract_json(text: str) -> dict | None:
     text = str(text or "").strip()
     if not text:

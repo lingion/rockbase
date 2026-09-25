@@ -19,6 +19,24 @@ BASE_URL = "https://api.scrapecreators.com/v1/youtube/channel"
 YOUTUBE_PLATFORM = "YouTube"
 
 
+def build_candidate_artifact(rows, model_results, validation):
+    """Thin adapter to the shared S1 candidate contract.
+
+    Imported lazily so the exporter keeps working when rockbase is not on
+    sys.path (standalone CLI usage).
+    """
+    try:
+        from rockbase.llm_stage_contracts import build_candidate_artifact as _build
+    except ImportError:  # pragma: no cover - standalone CLI path
+        import sys as _sys
+        from pathlib import Path as _Path
+        _root = _Path(__file__).resolve().parents[4]
+        if str(_root) not in _sys.path:
+            _sys.path.insert(0, str(_root))
+        from rockbase.llm_stage_contracts import build_candidate_artifact as _build
+    return _build(rows, model_results, validation)
+
+
 def load_api_env() -> Optional[str]:
     if GLOBAL_ENV.exists():
         load_dotenv(GLOBAL_ENV, override=True)

@@ -52,6 +52,25 @@ PERSON_BRAND_HINTS = {
 }
 
 
+def build_candidate_artifact(rows, model_results, validation):
+    """Adapter to the shared S1 candidate contract.
+
+    Deterministic script decisions + LLM screen results are already in the
+    reviewed rows; this packages the surviving candidate set as an approval
+    artifact for the Console. LLM output cannot alter API facts or platform
+    identity here — those stay with the deterministic columns.
+    """
+    try:
+        from rockbase.llm_stage_contracts import build_candidate_artifact as _build
+    except ImportError:  # pragma: no cover - standalone CLI path
+        import sys as _sys
+        _root = Path(__file__).resolve().parents[5]
+        if str(_root) not in _sys.path:
+            _sys.path.insert(0, str(_root))
+        from rockbase.llm_stage_contracts import build_candidate_artifact as _build
+    return _build(rows, model_results, validation)
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run YouTube Layer3 review with script gate + LLM-review flags.")
     parser.add_argument("--input-csv", required=True, help="Path to youtube_kol_L2_enriched_*.csv")
