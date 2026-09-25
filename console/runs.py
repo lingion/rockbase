@@ -161,7 +161,8 @@ class ApprovalStore:
 class RunManager:
     """Own managed runner processes and their console control files."""
 
-    _ALLOWED_PARAMETERS = frozenset({"batch_label", "execute_send", "execute_sync", "retries"})
+    _ALLOWED_PARAMETERS = frozenset({"batch_label", "execute_send", "execute_sync", "retries",
+                                      "mode", "policy_version"})
     _ALLOWED_ACTIONS = frozenset({"approve", "reject", "reject_with_feedback", "approve_run"})
 
     def __init__(self, *, repo_root: Path, runs: RunRepository, approvals: ApprovalStore,
@@ -191,6 +192,13 @@ class RunManager:
         for key in ("execute_send", "execute_sync"):
             if key in result and not isinstance(result[key], bool):
                 raise ValueError(f"invalid {key}")
+        if "mode" in result:
+            if result["mode"] not in ("review", "auto"):
+                raise ValueError("invalid mode")
+        if "policy_version" in result:
+            version = result["policy_version"]
+            if not isinstance(version, str) or not _BATCH_LABEL.fullmatch(version):
+                raise ValueError("invalid policy_version")
         return result
 
     def list_runs(self) -> list[dict[str, Any]]:
@@ -228,11 +236,15 @@ class RunManager:
             raise RuntimeError("an active run already owns the state directory")
         run_id = f"run-{os.urandom(8).hex()}"
         state_path = self._state_path(run_id)
+        mode = clean.get("mode", "review")
+        policy_version = clean.get("policy_version", "policy-v1")
         initial = {"version": 1, "run_id": run_id, "status": "starting", "parameters": clean,
+                   "mode": mode, "policy_version": policy_version,
                    "stages": {"runner": {"status": "running"}},
                    "runner_pid": None, "runner_pgid": None}
         _atomic_json(state_path, initial)
-        command = list(self.runner) + ["--run-id", run_id, "--state", str(state_path)]
+        command = list(self.runner) + ["--run-id", run_id, "--state", str(state_path),
+                                        "--mode", mode]
         process = subprocess.Popen(command, cwd=self.repo_root,
                                     start_new_session=True,
                                     stdin=subprocess.DEVNULL,
@@ -243,7 +255,7 @@ class RunManager:
         state.update({"status": "running", "runner_pid": process.pid, "runner_pgid": process.pid})
         _atomic_json(state_path, state)
         self.audit.append("start", request_id=request_id, actor=actor, run_id=run_id,
-                          details={"result": "ok"})
+                          details={"result": "ok", "mode": mode, "policy_version": policy_version})
         return state
 
     def pause(self, run_id: str, *, actor: str, request_id: str) -> dict[str, Any]:
@@ -253,6 +265,46 @@ class RunManager:
         marker.touch(exist_ok=True)
         self.audit.append("pause", request_id=request_id, actor=actor, run_id=run_id)
         return {"run_id": run_id, "status": "pause_requested"}
+
+    def authorize_auto_mode(self, run_id: str, actor: str, policy_version: str,
+                             request_id: str) -> dict[str, Any]:
+        """Record a run-scoped auto-mode authorization.
+
+        The mode itself is fixed at run start; this persists who authorized
+        auto advancement under which policy version. Operators only; the
+        send/sync gates and forbidden stages stay blocked regardless.
+        Duplicate authorization is idempotent.
+        """
+        if actor == "viewer" or not isinstance(actor, str) or not actor:
+            raise PermissionError("operator role required")
+        if not isinstance(policy_version, str) or not _BATCH_LABEL.fullmatch(policy_version):
+            raise ValueError("invalid policy_version")
+        state = self.runs.get_run(run_id)
+        if state is None:
+            raise KeyError(run_id)
+        existing = state.get("auto_authorization")
+        if isinstance(existing, dict) and existing.get("policy_version") == policy_version \
+                and existing.get("authorized_by") == actor:
+            return {**existing, "mode": state.get("mode", "review"), "run_id": run_id}
+        record = {
+            "mode": state.get("mode", "review"),
+            "policy_version": policy_version,
+            "actor": actor,
+            "authorized_by": actor,
+            "authorized_at": datetime.now(timezone.utc).isoformat(),
+        }
+        # Ensure the policy_version/authorized_by are top-level for
+        # cross-runner visibility even if start() did not provide one.
+        state["policy_version"] = policy_version
+        state["mode"] = record["mode"]
+        state["authorized_by"] = actor
+        state["auto_authorization"] = record
+        _atomic_json(self._state_path(run_id), state)
+        self.audit.append("authorize_auto_mode", request_id=request_id, actor=actor,
+                          run_id=run_id,
+                          details={"policy_version": policy_version,
+                                   "mode": record["mode"]})
+        return {**record, "run_id": run_id}
 
     def approve(self, run_id: str, gate: str, actor: str, batch_label: str, *, request_id: str) -> dict[str, Any]:
         record = self.approvals.approve(run_id, gate, actor, batch_label, datetime.now(timezone.utc))

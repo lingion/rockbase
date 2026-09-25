@@ -122,6 +122,65 @@ def _stage_gate(name: str) -> str | None:
     return None
 
 
+# Permanent auto-mode gates. A run-level ``auto`` authorization can never
+# override these: real send, production master writes, and queue-building
+# actions on send/sync stages stay Console-gated forever.
+_FORBIDDEN_AUTO_STAGES = frozenset({"mailkit_send", "master_sync_sent", "master_sync_replies"})
+_FORBIDDEN_AUTO_ACTIONS = frozenset({"execute", "queue", "send", "sync", "write_master"})
+
+
+def is_forbidden_auto_action(stage_name: str, action: str) -> bool:
+    """True when ``action`` on ``stage_name`` can never be auto-advanced."""
+    if stage_name in _FORBIDDEN_AUTO_STAGES:
+        return True
+    return action in _FORBIDDEN_AUTO_ACTIONS
+
+
+def should_auto_advance_artifact(artifact: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Decide whether an auto-mode run may advance past an artifact.
+
+    Deterministic: invalid validation, explicit ``manual_review``, or a
+    missing pending action all block the advance. The model can never set
+    ``pending_action`` — it is derived by the artifact builders.
+    """
+    if not isinstance(artifact, Mapping):
+        return {"advance": False, "reason": "missing-artifact"}
+    pending = artifact.get("pending_action") or (
+        artifact.get("payload", {}).get("pending_action")
+        if isinstance(artifact.get("payload"), Mapping) else None
+    )
+    if pending == "manual_review":
+        return {"advance": False, "reason": "manual_review"}
+    validation = artifact.get("validation") if isinstance(artifact.get("validation"), Mapping) else {}
+    if not validation.get("ok", False):
+        return {"advance": False, "reason": "invalid-artifact"}
+    if list(validation.get("errors") or []):
+        return {"advance": False, "reason": "invalid-artifact"}
+    if pending != "await_console_decision":
+        return {"advance": False, "reason": f"unknown-pending:{pending}"}
+    if pending != "await_console_decision":
+        return {"advance": False, "reason": f"unknown-pending:{pending}"}
+    return {"advance": True, "reason": "await_console_decision"}
+
+
+def filter_opt_out_rows(rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """Drop rows whose opt_out column is truthy from any outbound queue.
+
+    Opt-out is permanent: no run mode, actor, or model output can queue a
+    row that opted out.
+    """
+    kept: list[Mapping[str, Any]] = []
+    for row in rows or []:
+        if not isinstance(row, Mapping):
+            continue
+        raw = row.get("opt_out")
+        flag = str(raw or "").strip().lower()
+        if flag in {"true", "1", "yes", "y", "是"}:
+            continue
+        kept.append(row)
+    return kept
+
+
 def _load_decision(path: Path | None) -> dict | None:
     if path is None or not path.exists():
         return None
