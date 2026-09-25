@@ -93,3 +93,7 @@ The worker exposes health and metrics for accepted, duplicate, failed, retrying,
 - Replacing the existing receiver database or master CSV.
 - Removing polling before push delivery is proven in production.
 - Using an LLM for authentication, matching, deduplication, opt-out, rate limiting, or schedule arithmetic.
+
+## Interaction with the decision-artifact protocol (2026-09-25)
+
+Follow-up preparation consumes the same approval boundary as the batch pipeline: a draft produced from a reply becomes an artifact (`await_console_decision` or `manual_review`), and the worker never advances past the send gate on its own. Under a run-scoped `auto` authorization, only artifacts whose deterministic `pending_action` is `await_console_decision` advance, and only through stages where `is_forbidden_auto_action` is false. `reject_with_feedback` regenerates the draft as a new artifact version linked to the rejected parent, so the ledger stays append-only and auditable.

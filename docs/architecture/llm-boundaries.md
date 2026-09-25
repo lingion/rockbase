@@ -64,3 +64,22 @@ LLM usage is opt-in per pipeline stage. Default values:
 - The LLM never selects a destination mailbox, a template code, an opt-out outcome, or a send command. Selection remains local and allow-list based.
 - A pipeline stage that requires the LLM proceeds with `manual_review` when the call fails; it never blocks the pipeline.
 - The orchestrator never attempts the LLM in `--plan` mode; plan-only output stays deterministic and reproducible.
+
+## Decision artifacts (implemented, 2026-09-25)
+
+Stages S1–S5 expose their semantic output as versioned approval artifacts instead of acting directly:
+
+| Stage | Builder | Deterministic ownership (never the model) | Model share |
+|---|---|---|---|
+| S1 candidates | `rockbase.llm_stage_contracts.build_candidate_artifact` | API pagination, platform identity, URL/status facts, allow-listed fields | entity_type / relevance / confidence / reason |
+| S2 Mail1 | `build_mail1_artifact` | recipient and link policy absent from payload entirely | greeting / hook / reason / variant |
+| S3 summary | `ReplySummary.to_artifact` | PII redaction, intent allow-list, fallback preview | summary / intent / confidence |
+| S4 enrichment | `build_enrichment_artifact` + `apply_approved_artifact` | label allow-list, evidence retention, approved-version check before any write | label values / confidence |
+| S5 OCR + brief match | `build_ocr_artifact` / `match_brief_to_master` | review flags, dedupe, row matching after the model, hard exclusions, candidate-set membership | extraction / ranking / explanation |
+
+Contract invariants:
+
+- `pending_action` (`await_console_decision` / `manual_review`) is derived by deterministic code from validation; the model output has no key that can set it.
+- Payloads are bounded (allow-listed keys, size caps, redaction before serialization); `raw_hits`, base64 image data, and contact fields never cross the boundary.
+- Apply paths require the persisted record to match the approved artifact id and current version; `execute=False` is always a preview.
+- Run modes: `review` pauses each decision stage for a Console decision; `auto` advances only non-forbidden stages under a recorded authorization (`RunManager.authorize_auto_mode`). `is_forbidden_auto_action` permanently blocks send execute, master production writes, and queue-building on send/sync stages; opted-out rows never queue in any mode.

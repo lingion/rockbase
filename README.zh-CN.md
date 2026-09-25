@@ -128,6 +128,15 @@ python -m scripts.run_full_pipeline \
 
 完整运行器不是所有历史 skill 和平台的通用适配器。目前 S2 生成路径只支持 YouTube；剩余统一工作见[迁移状态](docs/inventory/MIGRATION_STATUS.md)。
 
+### review 与 auto 运行模式
+
+每个托管运行在启动时固定模式，运行中不可更改：
+
+- `review`（默认）：每个决策阶段（S1 候选、S2 Mail1 草稿、S3 草稿、S5 OCR）先运行一次产出有界产物，然后以 `awaiting_approval` 暂停，等待操作员在 Console 对该产物版本记录决定。
+- `auto`：非禁止类决策阶段在记录了运行级授权后自动推进（`RunManager.authorize_auto_mode` 持久化操作员、策略版本和时间戳）。真实发信、主表生产写入、send/sync 阶段的入队动作在 auto 模式下永久禁止（`is_forbidden_auto_action`）；send/sync 审批闸门照常生效。
+
+产物是带内容哈希的版本化信封（`rockbase/decision_models.py`）。模型置信度低、schema 违规、校验失败或任何 `manual_review` 待定动作都会确定性地阻止 auto 推进——模型不能设置 `pending_action`，它由构建器从校验结果推导。`reject_with_feedback` 记录操作员反馈，重新生成的产物成为链接到父版本的新版本。退订行（`opt_out` 列）在任何模式下都不会进入发信队列。
+
 ### 健康检查
 
 ```bash
@@ -220,7 +229,7 @@ python skills/S5-ag-ocr-sync/scripts/ag_ocr_sync.py \
 
 ## 还没有自动化的地方
 
-当前已经自动化的内容包括：阶段构建与执行、状态持久化、重试、超时、暂停/恢复、产物校验、发信/同步审批闸门、输出脱敏、运行查看、健康 JSON、本地 Docker 启动、S1 导出与应用、S2 生成、mailkit 收发、S3 回复同步和 S5 OCR 处理。
+当前已经自动化的内容包括：阶段构建与执行、状态持久化、重试、超时、暂停/恢复、产物校验、发信/同步审批闸门、S1–S5 决策产物与 Console 审批、运行级 review/auto 模式、输出脱敏、运行查看、健康 JSON、本地 Docker 启动、S1 导出与应用、S2 生成、mailkit 收发、S3 回复同步和 S5 OCR 处理。
 
 剩余边界如下：
 
@@ -230,7 +239,7 @@ python skills/S5-ag-ocr-sync/scripts/ag_ocr_sync.py \
 | 全流程覆盖 | full runner 能接入 S1/S5/mail 阶段，但 S2 生成目前只支持 YouTube；并非所有平台和历史流程都已成为一条统一端到端图。 |
 | 路径可移植性 | 历史文件仍有 `${ROCKBASE_HOME}`、CWD、`PYTHONPATH`、`sys.path` 假设；路径审计只负责盘点，不负责迁移。 |
 | 能力注册表 | 没有完整机器可读注册表统一描述每个 skill 的输入、输出、副作用、凭据和策略。 |
-| 通用写入审批 | Console 覆盖本地发信和同步闸门；所有历史写入路径尚未共用一个通用确认协议。 |
+| 通用写入审批 | Console 覆盖本地发信/同步闸门和 S1–S5 决策产物；这些阶段之外的历史写入路径尚未共用一个通用确认协议。 |
 | 外部通知 | 有健康 JSON 和退出码可供 supervisor 使用，但没有内置 Slack、飞书、邮件或 webhook 告警发送层。 |
 | 部署监管 | 编排器有重试，但服务重启、告警路由、secret manager 和主机策略需要部署方配置。 |
 | 可选依赖 CI | Gmail、browser、OCR、social、LLM 依赖组尚未在完整 CI 矩阵中持续全部执行。 |

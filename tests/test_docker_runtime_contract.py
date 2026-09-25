@@ -50,3 +50,16 @@ def test_dockerfile_copies_business_source_and_has_no_single_role_healthcheck() 
         assert f"COPY --chown=rockbase:rockbase {directory} " in source
     assert "ENTRYPOINT [\"/usr/local/bin/rockbase\"]" in source
     assert "HEALTHCHECK" not in source
+
+
+def test_console_role_keeps_approval_state_on_persistent_volumes() -> None:
+    """The approval boundary must survive container replacement: run state
+    (mode/policy/decisions) and console state live on named volumes, and no
+    role is granted an execute-by-default environment."""
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    console_block = compose.split("console:")[1].split("receiver:")[0]
+    assert "rockbase-runs" in console_block
+    assert "rockbase-console-state" in console_block
+    # No environment variable anywhere may default an execute/side effect on.
+    for forbidden in ("EXECUTE_SEND: \"1\"", "EXECUTE_SYNC: \"1\"", "ROCKBASE_PIPELINE_MODE: auto"):
+        assert forbidden not in compose, f"compose must not hard-enable {forbidden}"

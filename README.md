@@ -139,6 +139,15 @@ python -m scripts.run_full_pipeline \
 
 The full runner is not a universal adapter for every historical skill or platform. Its S2 generation path currently supports YouTube only; see [migration status](docs/inventory/MIGRATION_STATUS.md) for the remaining consolidation work.
 
+### Review and auto run modes
+
+Every managed run is pinned to a mode at start and the mode can never change mid-run:
+
+- `review` (default): each decision stage (S1 candidates, S2 Mail1 draft, S3 draft, S5 OCR) runs once to produce a bounded artifact, then pauses with `awaiting_approval` until an operator records a Console decision on that artifact version.
+- `auto`: non-forbidden decision stages advance with a recorded run-scoped authorization (`RunManager.authorize_auto_mode` persists the operator, the policy version, and a timestamp). Real send, master production writes, and queue-building on send/sync stages are permanently forbidden in auto mode (`is_forbidden_auto_action`); the send/sync approval gates still apply.
+
+Artifacts are versioned envelopes (`rockbase/decision_models.py`) with a content hash. Low model confidence, schema violations, invalid validation, or any `manual_review` pending action stop auto advancement deterministically — the model cannot set `pending_action`; builders derive it from validation. `reject_with_feedback` records the operator feedback and the regenerated artifact becomes a new version linked to its parent. Opted-out rows (`opt_out` column) never enter an outbound queue in any mode.
+
 ### Health and host supervision
 
 ```bash
@@ -231,7 +240,7 @@ The result continues through review thresholds, row matching, duplicate handling
 
 ## Automation coverage and remaining gaps
 
-The code automates the following today: stage construction and execution, state persistence, retries, timeouts, pause/resume, artifact validation, send/sync approval gates, output redaction, run inspection, health JSON, local Docker startup, S1 export/apply, S2 generation, mailkit transport, S3 reply synchronization, and S5 OCR processing.
+The code automates the following today: stage construction and execution, state persistence, retries, timeouts, pause/resume, artifact validation, send/sync approval gates, S1–S5 decision artifacts with Console approval, run-scoped review/auto modes, output redaction, run inspection, health JSON, local Docker startup, S1 export/apply, S2 generation, mailkit transport, S3 reply synchronization, and S5 OCR processing.
 
 The remaining work is not one single missing feature. It falls into these evidence-based categories:
 
@@ -241,7 +250,7 @@ The remaining work is not one single missing feature. It falls into these eviden
 | Universal pipeline coverage | The full runner wires optional S1/S5/mail stages, but its S2 generation path currently supports YouTube only. Not every platform and historical workflow is a single end-to-end graph. |
 | Path portability | `${ROCKBASE_HOME}`, CWD, `PYTHONPATH`, and `sys.path` assumptions remain in historical files. `audit_server_paths` inventories them; it does not migrate them. |
 | Capability registry | There is no complete machine-readable registry for every skill's inputs, outputs, side effects, required credentials, and policy. |
-| Cross-workflow approval | Console approval covers local send and sync gates. There is no generalized write-confirmation protocol shared by every historical write path. |
+| Cross-workflow approval | Console approval covers local send and sync gates plus S1–S5 decision artifacts. Historical write paths outside those stages still have no shared write-confirmation protocol. |
 | External notifications | Health JSON and exit codes are available to systemd/cron/supervisors. Built-in Slack, Feishu, email, or webhook alert delivery is not implemented. |
 | Deployment supervision | Runner retries exist, but restart policy, alert routing, secret-manager integration, and host-specific operational policy must be configured by the deployment. |
 | Optional dependency CI | Gmail, browser, OCR, social, and LLM dependency groups are not all exercised continuously in a complete CI matrix. |

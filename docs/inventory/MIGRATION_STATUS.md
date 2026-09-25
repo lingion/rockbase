@@ -10,6 +10,7 @@
 - 迁移 S1 通用补全路径 wrapper 和 S3 recovery 路径 wrapper。
 - 修复 S3 测试中被脱敏破坏的 CSV fixture，改用 `.example.invalid` 虚构域名。
 - 新增共享路径测试与 S1/S3 代表性离线 smoke。
+- 落地 S1–S5 决策产物（`rockbase/llm_stage_contracts.py` + 各 stage builder）；Console 审批、版本化、apply 时再次校验、auto 模式运行级授权、永久 send/sync 闸门、opt-out 行永不进入队列。
 
 ## 本次明确未完成
 
