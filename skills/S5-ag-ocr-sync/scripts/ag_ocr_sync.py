@@ -1090,6 +1090,113 @@ def should_write(existing: str, new_value: str, force_overwrite: bool) -> bool:
     return not (existing or "").strip()
 
 
+# Fields that may appear on an OCR artifact image entry. Everything else the
+# extraction pipeline carries (raw_hits payloads, base64 image bytes, contact
+# candidates) is dropped here, so no raw image data or credential can reach
+# the Console approval boundary.
+_ARTIFACT_IMAGE_KEYS = (
+    "path",
+    "handle",
+    "author_name",
+    "countries",
+    "gender",
+    "age",
+    "matched_row",
+    "match_reason",
+    "confidence",
+    "review_required",
+    "review_reasons",
+    "blocked_fields",
+    "duplicate",
+    "second_pass_fixed",
+    "second_pass_notes",
+)
+
+_MAX_ARTIFACT_IMAGES = 500
+
+
+def build_ocr_artifact(
+    results: list[ScreenshotData],
+    duplicate_images: list,
+    validation: dict,
+    image_dir: str = "",
+) -> dict:
+    """Bound one OCR batch into a Console approval artifact.
+
+    ``pending_action`` is deterministic from validation and per-image review
+    state, never from the model: any validation error or any image flagged
+    ``review_required`` forces ``manual_review``; otherwise the artifact is
+    ``await_console_decision``. ``raw_hits`` (which can hold full LLM
+    payloads or OCR candidate lists) is never copied into the artifact.
+    """
+    errors = list(validation.get("errors") or []) if isinstance(validation, dict) else []
+    warnings = list(validation.get("warnings") or []) if isinstance(validation, dict) else []
+    ok = bool(validation.get("ok")) if isinstance(validation, dict) else False
+
+    images: list[dict] = []
+    blocked_summary: dict[str, int] = {}
+    review_count = 0
+    duplicate_count = 0
+    unmatched_count = 0
+    for data in list(results)[:_MAX_ARTIFACT_IMAGES]:
+        snapshot = asdict(data)
+        picked = {key: snapshot.get(key) for key in _ARTIFACT_IMAGE_KEYS}
+        # path carries no image bytes; assert defensively in case a future
+        # field ever embeds a data URI.
+        if isinstance(picked["path"], str) and picked["path"].startswith("data:"):
+            picked["path"] = "[REDACTED_DATA_URI]"
+        for field_name in data.blocked_fields:
+            blocked_summary[field_name] = blocked_summary.get(field_name, 0) + 1
+        if data.review_required:
+            review_count += 1
+        if data.duplicate:
+            duplicate_count += 1
+        if data.matched_row is None:
+            unmatched_count += 1
+        images.append(picked)
+
+    duplicate_refs = []
+    for entry in list(duplicate_images)[:_MAX_ARTIFACT_IMAGES]:
+        if isinstance(entry, dict):
+            duplicate_refs.append({
+                "path": entry.get("path", ""),
+                "exact_hash": entry.get("exact_hash", ""),
+                "visual_hash": entry.get("visual_hash", ""),
+            })
+        else:
+            duplicate_refs.append({"path": str(entry)})
+
+    needs_review = (not ok) or errors or review_count > 0
+    pending = "manual_review" if needs_review else "await_console_decision"
+    return {
+        "stage": "s5.ocr",
+        "payload": {
+            "image_dir": str(image_dir),
+            "images": images,
+            "duplicate_images": duplicate_refs,
+            "counts": {
+                "selected": len(images),
+                "duplicates": duplicate_count,
+                "review_required": review_count,
+                "unmatched": unmatched_count,
+                "blocked_fields": sum(blocked_summary.values()),
+            },
+            "blocked_fields_summary": blocked_summary,
+            "validation": {
+                "ok": ok,
+                "errors": [str(e)[:256] for e in errors],
+                "warnings": [str(w)[:256] for w in warnings],
+            },
+            "pending_action": pending,
+        },
+        "validation": {
+            "ok": ok,
+            "errors": [str(e)[:256] for e in errors],
+            "warnings": [str(w)[:256] for w in warnings],
+        },
+    }
+
+
 def build_summary_markdown(
     image_dir: Path,
     csv_path: Path,
